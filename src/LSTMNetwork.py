@@ -26,7 +26,6 @@ class LSTMNetwork(object):
 
 
         self.layers = {}
-        self.build_model()
 
 
     def build_model_1(self):
@@ -48,14 +47,14 @@ class LSTMNetwork(object):
         cost = T.sum(T.nnet.categorical_crossentropy(self.layers[self.number_of_layers].probabilities, y[-1]))
         #grads = T.grad(cost, params)
 
-        updates =  self.adam(params)#[(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
+        updates =  self.adam(cost,params)#[(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
 
         self.sgd_step = theano.function([x,drop_masks, y], [cost], updates=updates)
 
         self.test_model = theano.function([x,drop_masks, y], cost)
 
 
-    def adam(loss, all_params, learning_rate=0.0002, beta1=0.1, beta2=0.001,
+    def adam(self,loss, all_params, learning_rate=0.0002, beta1=0.1, beta2=0.001,
          epsilon=1e-8, gamma=1-1e-7):
         """
         ADAM update rules
@@ -109,48 +108,31 @@ class LSTMNetwork(object):
 
         return updates
 
-    def train(model, X_train, y_train,nepoch=1, callback=None, *args):
+    def train(self, X_train, y_train,X_dev,y_dev,nepoch=1, callback=None, *args):
         num_examples_seen = 0
         for epoch in range(nepoch):
             # For each training example...
             for i in np.random.permutation(len(y_train)):
                 # One SGD step
                 self.sgd_step(X_train[i],
-                               [np.random.binomial(1, 1.0 - model.dropout_p,model.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
+                               [np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                ,y_train[i])
-                num_examples_seen += 1
-                # Optionally do callback
 
-                callback(*args)
-        return model
+            self.test_dev(X_dev,y_dev)
 
-    def test_model(self,num_examples_seen):
-        pc_sentiment = np.zeros((len(self.test["sentences"]),self.labels_count))
-        for i in np.arange(len(self.test["sentences"])):
-            pc_sentiment[i] = self.model.predict(self.test["sentences"][i],np.ones((len(self.test["sentences"][i]),self.model.hidden_dim),dtype=np.float32))
+    def test_dev(self,X_dev,y_dev):
+        pc_sentiment = np.zeros((len(X_dev),self.labels_count))
+        for i in np.arange(len(X_dev)):
+            pc_sentiment[i] = self.model.predict(X_dev[i],np.ones((len(X_dev[i]),self.model.hidden_dim),dtype=np.float32))
 
         correct = 0.0
-        for i in np.arange(len(self.test["sentences"])):
-            if np.argmax(pc_sentiment[i]) == np.argmax(self.test["sentiments"][i]):
+        for i in np.arange(len(X_dev)):
+            if np.argmax(pc_sentiment[i]) == np.argmax(X_dev[i]):
                 correct += 1
 
-        accuracy = correct / len(self.test["sentences"])
+        accuracy = correct / len(X_dev)
 
-        print("Accuracy on test: %f" %accuracy)
-
-
-        pc_sentiment = np.zeros((len(self.train["sentences"]),self.labels_count))
-        for i in np.arange(len(self.train["sentences"])):
-            pc_sentiment[i] = self.model.predict(self.train["sentences"][i],np.ones((len(self.train["sentences"][i]),self.model.hidden_dim),dtype=np.float32))
-
-        correct = 0.0
-        for i in np.arange(len(self.train["sentences"])):
-            if np.argmax(pc_sentiment[i]) == np.argmax(self.train["sentiments"][i]):
-                correct += 1
-
-        accuracy = correct / len(self.train["sentences"])
-
-        print("Accuracy on train: %f" %accuracy)
+        print("Accuracy on dev: %f" %accuracy)
 
 
     @staticmethod
@@ -158,26 +140,27 @@ class LSTMNetwork(object):
         train = {}
         test = {}
         dev = {}
-        index_to_word=[UNKNOWN_TOKEN]
-        train["sentences"], train["sentiments"], word_to_index, index_to_word, labels_count = DataPrep.load_sentiment_data("../data/sentiment/trainsentence_and_label_binary.txt",index_to_word)
-        test["sentences"], test["sentiments"] , word_to_index, index_to_word, lc= DataPrep.load_sentiment_data("../data/sentiment/testsentence_and_label_binary.txt",index_to_word,labels_count)
-        dev["sentences"], dev["sentiments"] , word_to_index, index_to_word, lc= DataPrep.load_sentiment_data("../data/sentiment/devsentence_and_label_binary.txt",index_to_word,labels_count)
+        #index_to_word=[UNKNOWN_TOKEN]
+        #train["sentences"], train["sentiments"], word_to_index, index_to_word, labels_count = DataPrep.load_sentiment_data("../data/sentiment/trainsentence_and_label_binary.txt",index_to_word)
+        #test["sentences"], test["sentiments"] , word_to_index, index_to_word, lc= DataPrep.load_sentiment_data("../data/sentiment/testsentence_and_label_binary.txt",index_to_word,labels_count)
+        #dev["sentences"], dev["sentiments"] , word_to_index, index_to_word, lc= DataPrep.load_sentiment_data("../data/sentiment/devsentence_and_label_binary.txt",index_to_word,labels_count)
 
-        vocab_representation = WordEmbeddingLayer()
-        vocab_representation.load_embeddings_from_glove_file(filename="../data/glove.840B.300d.txt",filter=index_to_word)
-        vocab_representation.save_embedding("../data/filtered_glove.840B.300d")
-        vocab_representation.embed_and_save(sentences=train["sentences"],labels=train["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
-        vocab_representation.embed_and_save(sentences=dev["sentences"],labels=dev["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
-        vocab_representation.embed_and_save(sentences=test["sentences"],labels=test["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
+        #vocab_representation = WordEmbeddingLayer()
+        #vocab_representation.load_embeddings_from_glove_file(filename="../data/glove.840B.300d.txt",filter=index_to_word)
+        #vocab_representation.save_embedding("../data/filtered_glove.840B.300d")
+        #vocab_representation.load_filtered_embedding("../data/filtered_glove.840B.300d")
+        #vocab_representation.embed_and_save(sentences=train["sentences"],labels=train["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
+        #vocab_representation.embed_and_save(sentences=dev["sentences"],labels=dev["sentiments"],path="../data/",name="dev",representation="glove.840B.300d")
+        #vocab_representation.embed_and_save(sentences=test["sentences"],labels=test["sentiments"],path="../data/",name="test",representation="glove.840B.300d")
 
-        embedded_train, train_labels = vocab_representation.load_embeddings_from_glove_file(path="../data/",name="train",representation="glove.840B.300d")
-        embedded_train, train_labels = vocab_representation.load_embeddings_from_glove_file(path="../data/",name="dev",representation="glove.840B.300d")
-        embedded_train, train_labels = vocab_representation.load_embeddings_from_glove_file(path="../data/",name="test",representation="glove.840B.300d")
+        embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="train",representation="glove.840B.300d")
+        embedded_dev, dev_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="dev",representation="glove.840B.300d")
+        embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
 
-        """lstm = LSTMNetwork(input_dim=input_representation.dim,output_dim=labels_count,number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.01)
+        lstm = LSTMNetwork(input_dim=len(embedded_train[0]),output_dim=len(train_labels[0]),number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.01)
         lstm.build_model_1()
 
-        lstm.train(embedded_train,train["sentiments"],embedded_dev,dev["sentiments"])"""
+        lstm.train(embedded_train,train_labels,embedded_dev,dev_labels)
 
 
 

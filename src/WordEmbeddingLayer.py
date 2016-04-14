@@ -45,8 +45,12 @@ class WordEmbeddingLayer(object):
             pickle.dump(self.vec2word,f)
 
 
+    def load_filtered_embedding(self,filename):
+        with open(filename+"_word2vec.pkl","rb") as f:
+            self.word2vec = pickle.load(f)
 
-
+        with open(filename+"_vec2word.pkl","rb") as f:
+            self.vec2word = pickle.load(f)
 
     def get_vector(self,word):
         if word in self.word2vec:
@@ -66,18 +70,18 @@ class WordEmbeddingLayer(object):
         embedded, labels = [], []
 
         with open(path+"embedded_"+name+"_"+representation+".pkl", "rb") as f:
-            embedded_train = pickle.load(f)
-        with open(path+"labels_"+name+".pkl:", "rb") as f:
+            embedded = pickle.load(f)
+        with open(path+"labels_"+name+".pkl", "rb") as f:
             labels = pickle.load(f)
 
-        return embedded, labels
+        return np.asarray(embedded), np.asarray(labels)
 
     def embed_and_save(self,sentences,labels,path,name,representation):
         embedded = self.embed(sentences)
 
         with open(path+"embedded_"+name+"_"+representation+".pkl","wb") as f:
             pickle.dump(embedded,f)
-        with open(path+"labels_"+name+".pkl:", "wb") as f:
+        with open(path+"labels_"+name+".pkl", "wb") as f:
             pickle.dump(labels,f)
 
     def embed(self,sentences):
