@@ -7,10 +7,12 @@ sys.path.append('../../')
 
 from LSTM.src.LSTMLayer import *
 from LSTM.src.OutputLayer import *
+from LSTM.src.WordEmbeddingLayer import *
 
 
 from Util.util.data.DataPrep import *
 from Util.util.file.FileUtil import *
+from WordEmbeddingLayer import *
 
 class LSTMNetwork(object):
     def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.01):
@@ -27,7 +29,7 @@ class LSTMNetwork(object):
         self.build_model()
 
 
-    def build_model(self):
+    def build_model_1(self):
 
         x = T.imatrix('x').astype(theano.config.floatX)
         drop_masks = T.imatrix('drop_masks').astype(theano.config.floatX)
@@ -44,16 +46,70 @@ class LSTMNetwork(object):
 
 
         cost = T.sum(T.nnet.categorical_crossentropy(self.layers[self.number_of_layers].probabilities, y[-1]))
-        grads = T.grad(cost, params)
+        #grads = T.grad(cost, params)
 
-        updates = [(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
+        updates =  self.adam(params)#[(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
 
         self.sgd_step = theano.function([x,drop_masks, y], [cost], updates=updates)
 
         self.test_model = theano.function([x,drop_masks, y], cost)
 
-    def train_with_sgd(self, X_train, y_train, learning_rate=0.01, nepoch=1,
-        callback_every=1, callback=None, *args):
+
+    def adam(loss, all_params, learning_rate=0.0002, beta1=0.1, beta2=0.001,
+         epsilon=1e-8, gamma=1-1e-7):
+        """
+        ADAM update rules
+        Default values are taken from [Kingma2014]
+        References:
+        [Kingma2014] Kingma, Diederik, and Jimmy Ba.
+        "Adam: A Method for Stochastic Optimization."
+        arXiv preprint arXiv:1412.6980 (2014).
+        :parameters:
+            - loss : Theano expression
+                specifying loss
+            - all_params : list of theano.tensors
+                Gradients are calculated w.r.t. tensors in all_parameters
+            - learning_Rate : float
+            - beta1 : float
+                Exponentioal decay rate on 1. moment of gradients
+            - beta2 : float
+                Exponentioal decay rate on 2. moment of gradients
+            - epsilon : float
+                For numerical stability
+            - gamma: float
+                Decay on first moment running average coefficient
+            - Returns: list of update rules
+        """
+
+        updates = []
+        all_grads = theano.grad(loss, all_params)
+
+        i = theano.shared(np.float32(1))  # HOW to init scalar shared?
+        i_t = i + 1.
+        fix1 = 1. - (1. - beta1)**i_t
+        fix2 = 1. - (1. - beta2)**i_t
+        beta1_t = 1-(1-beta1)*gamma**(i_t-1)   # ADDED
+        learning_rate_t = learning_rate * (T.sqrt(fix2) / fix1)
+
+        for param_i, g in zip(all_params, all_grads):
+            m = theano.shared(
+                np.zeros(param_i.get_value().shape, dtype=theano.config.floatX))
+            v = theano.shared(
+                np.zeros(param_i.get_value().shape, dtype=theano.config.floatX))
+
+            m_t = (beta1_t * g) + ((1. - beta1_t) * m) # CHANGED from b_t TO use beta1_t
+            v_t = (beta2 * g**2) + ((1. - beta2) * v)
+            g_t = m_t / (T.sqrt(v_t) + epsilon)
+            param_i_t = param_i - (learning_rate_t * g_t)
+
+            updates.append((m, m_t))
+            updates.append((v, v_t))
+            updates.append((param_i, param_i_t) )
+        updates.append((i, i_t))
+
+        return updates
+
+    def train(model, X_train, y_train,nepoch=1, callback=None, *args):
         num_examples_seen = 0
         for epoch in range(nepoch):
             # For each training example...
@@ -64,8 +120,9 @@ class LSTMNetwork(object):
                                ,y_train[i])
                 num_examples_seen += 1
                 # Optionally do callback
-            if (callback and callback_every and num_examples_seen % callback_every == 0):
-                callback(num_examples_seen, *args)
+
+                callback(*args)
+        return model
 
     def test_model(self,num_examples_seen):
         pc_sentiment = np.zeros((len(self.test["sentences"]),self.labels_count))
@@ -96,8 +153,38 @@ class LSTMNetwork(object):
         print("Accuracy on train: %f" %accuracy)
 
 
+    @staticmethod
+    def train_1layaer_glove_wordembedding():
+        train = {}
+        test = {}
+        dev = {}
+        index_to_word=[UNKNOWN_TOKEN]
+        train["sentences"], train["sentiments"], word_to_index, index_to_word, labels_count = DataPrep.load_sentiment_data("../data/sentiment/trainsentence_and_label_binary.txt",index_to_word)
+        test["sentences"], test["sentiments"] , word_to_index, index_to_word, lc= DataPrep.load_sentiment_data("../data/sentiment/testsentence_and_label_binary.txt",index_to_word,labels_count)
+        dev["sentences"], dev["sentiments"] , word_to_index, index_to_word, lc= DataPrep.load_sentiment_data("../data/sentiment/devsentence_and_label_binary.txt",index_to_word,labels_count)
+
+        vocab_representation = WordEmbeddingLayer()
+        vocab_representation.load_embeddings_from_glove_file(filename="../data/glove.840B.300d.txt",filter=index_to_word)
+        vocab_representation.save_embedding("../data/filtered_glove.840B.300d")
+        vocab_representation.embed_and_save(sentences=train["sentences"],labels=train["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
+        vocab_representation.embed_and_save(sentences=dev["sentences"],labels=dev["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
+        vocab_representation.embed_and_save(sentences=test["sentences"],labels=test["sentiments"],path="../data/",name="train",representation="glove.840B.300d")
+
+        embedded_train, train_labels = vocab_representation.load_embeddings_from_glove_file(path="../data/",name="train",representation="glove.840B.300d")
+        embedded_train, train_labels = vocab_representation.load_embeddings_from_glove_file(path="../data/",name="dev",representation="glove.840B.300d")
+        embedded_train, train_labels = vocab_representation.load_embeddings_from_glove_file(path="../data/",name="test",representation="glove.840B.300d")
+
+        """lstm = LSTMNetwork(input_dim=input_representation.dim,output_dim=labels_count,number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.01)
+        lstm.build_model_1()
+
+        lstm.train(embedded_train,train["sentiments"],embedded_dev,dev["sentiments"])"""
+
+
+
+
+
 if __name__ == '__main__':
-    train = {}
+    """train = {}
     test = {}
     train["sentences"], train["sentiments"], word_to_index, index_to_word, labels_count = DataPrep.load_one_hot_sentiment_data("../data/sentiment/trainsentence_and_label_binary_words_added.txt")
     test["sentences"], test["sentiments"]= DataPrep.load_one_hot_sentiment_data_traind_vocabulary("../data/sentiment/testsentence_and_label_binary.txt",word_to_index, index_to_word,labels_count)
@@ -112,3 +199,5 @@ if __name__ == '__main__':
     model.train_with_sgd(train["sentences"],expected_outputs,learning_rate=0.01, nepoch=1,
         callback_every=1, callback=model.test_model)
 
+    print(cost)"""
+    LSTMNetwork.train_1layaer_glove_wordembedding()
