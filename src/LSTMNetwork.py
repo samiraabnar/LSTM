@@ -52,22 +52,48 @@ class LSTMNetwork(object):
 
         self.test_model = theano.function([x,drop_masks, y], cost)
 
-    def train_with_sgd(model, X_train, y_train, learning_rate=0.01, nepoch=1,
-        callback_every=10000, callback=None, *args):
+    def train_with_sgd(self, X_train, y_train, learning_rate=0.01, nepoch=1,
+        callback_every=1, callback=None, *args):
         num_examples_seen = 0
         for epoch in range(nepoch):
             # For each training example...
             for i in np.random.permutation(len(y_train)):
                 # One SGD step
-                model.sgd_step(X_train[i],
+                self.sgd_step(X_train[i],
                                [np.random.binomial(1, 1.0 - model.dropout_p,model.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                ,y_train[i])
                 num_examples_seen += 1
                 # Optionally do callback
             if (callback and callback_every and num_examples_seen % callback_every == 0):
                 callback(num_examples_seen, *args)
-        return model
 
+    def test_model(self,num_examples_seen):
+        pc_sentiment = np.zeros((len(self.test["sentences"]),self.labels_count))
+        for i in np.arange(len(self.test["sentences"])):
+            pc_sentiment[i] = self.model.predict(self.test["sentences"][i],np.ones((len(self.test["sentences"][i]),self.model.hidden_dim),dtype=np.float32))
+
+        correct = 0.0
+        for i in np.arange(len(self.test["sentences"])):
+            if np.argmax(pc_sentiment[i]) == np.argmax(self.test["sentiments"][i]):
+                correct += 1
+
+        accuracy = correct / len(self.test["sentences"])
+
+        print("Accuracy on test: %f" %accuracy)
+
+
+        pc_sentiment = np.zeros((len(self.train["sentences"]),self.labels_count))
+        for i in np.arange(len(self.train["sentences"])):
+            pc_sentiment[i] = self.model.predict(self.train["sentences"][i],np.ones((len(self.train["sentences"][i]),self.model.hidden_dim),dtype=np.float32))
+
+        correct = 0.0
+        for i in np.arange(len(self.train["sentences"])):
+            if np.argmax(pc_sentiment[i]) == np.argmax(self.train["sentiments"][i]):
+                correct += 1
+
+        accuracy = correct / len(self.train["sentences"])
+
+        print("Accuracy on train: %f" %accuracy)
 
 
 if __name__ == '__main__':
@@ -83,6 +109,6 @@ if __name__ == '__main__':
         s_out[-1] = train["sentiments"][i]
         expected_outputs.append(s_out)
     print("training ... ")
-    cost = model.train_with_sgd(train["sentences"],expected_outputs)
+    model.train_with_sgd(train["sentences"],expected_outputs,learning_rate=0.01, nepoch=1,
+        callback_every=1, callback=model.test_model)
 
-    print(cost)
