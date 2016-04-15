@@ -21,17 +21,17 @@ class LSTMLayer(object):
 
             c = forget_gate * prev_content + input_gate * stabilized_input
             s = output_gate * T.tanh(c)
+            o = s
 
-            return [s,c]
+            return [o,s,c]
 
-        [hidden_state,memory_content] = theano.scan(
+        [self.output,hidden_state,memory_content] , updates = theano.scan(
             forward_step,
             sequences=[input,drop_masks],
             truncate_gradient=self.bptt_truncate,
-            outputs_info=[dict(initial=T.zeros(self.output_dim)),
+            outputs_info=[None,dict(initial=T.zeros(self.output_dim)),
                           dict(initial=T.zeros(self.output_dim))])
 
-        self.output = hidden_state[-1]
 
     def initialize_params(self):
         U_input = np.asarray(

@@ -30,7 +30,7 @@ class OutputLayer(object): #Y = softmax( Wx + bias)
     def build_model(self):
 
         self.probabilities = T.nnet.softmax(T.dot(self.W,self.input) + self.bias)[0]
-        self.predictions = T.argmax(self.probabilities)
+        self.predictions = T.eye(self.output_dim)[T.argmax(self.probabilities)]
 
         #cost = self.negative_log_likelihood(y)
         #all_params = [self.W, self.bias]
