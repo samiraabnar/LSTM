@@ -5,16 +5,21 @@ import theano.tensor as T
 
 class OutputLayer(object): #Y = softmax( Wx + bias)
 
-    def __init__(self, input, input_dim, output_dim):
+    def __init__(self, input, input_dim, output_dim,random_state):
         self.input = input
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.random_state=random_state
         self.initialize_params()
 
         self.build_model()
 
     def initialize_params(self):
-        w_value = np.zeros((self.output_dim,self.input_dim), dtype=theano.config.floatX)
+        w_value = np.asarray(
+            self.random_state.uniform(-np.sqrt(1.0 / (self.output_dim + self.input_dim)),
+                                      np.sqrt(1.0 / (self.output_dim + self.input_dim)),
+                                      (self.output_dim,self.input_dim))
+            , dtype=theano.config.floatX)
         self.W = theano.shared(value=w_value, name="W", borrow=True)
         bias_value = np.zeros(self.output_dim, dtype=theano.config.floatX)
         self.bias = theano.shared(value=bias_value, name="bias", borrow=True)
@@ -29,8 +34,17 @@ class OutputLayer(object): #Y = softmax( Wx + bias)
 
     def build_model(self):
 
-        self.probabilities = T.nnet.softmax(T.dot(self.W,self.input) + self.bias)[0]
-        self.predictions = T.eye(self.output_dim)[T.argmax(self.probabilities)]
+         def forward_step(x_t):
+            o = T.nnet.softmax(T.dot(self.W,x_t)+ self.bias)[0]
+
+            return [o]
+
+         self.probabilities, updates = theano.scan(
+            forward_step,
+            sequences=[self.input],
+            outputs_info=[None])
+
+         self.predictions = T.eye(self.output_dim)[T.argmax(self.probabilities,axis=1)]
 
         #cost = self.negative_log_likelihood(y)
         #all_params = [self.W, self.bias]

@@ -15,7 +15,7 @@ from Util.util.file.FileUtil import *
 from WordEmbeddingLayer import *
 
 class LSTMNetwork(object):
-    def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.0,learning_rate=0.1):
+    def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.1):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.number_of_layers = number_of_layers
@@ -32,7 +32,7 @@ class LSTMNetwork(object):
 
         x = T.imatrix('x').astype(theano.config.floatX)
         drop_masks = T.imatrix('drop_masks').astype(theano.config.floatX)
-        y = T.imatrix('y').astype(theano.config.floatX)
+        y = T.ivector('y')
 
         self.layers[0] = LSTMLayer(random_state=self.random_state,input=x,drop_masks=drop_masks,input_dim=self.input_dim,output_dim=self.hidden_dims[0])
         params = self.layers[0].params
@@ -41,24 +41,25 @@ class LSTMNetwork(object):
             params += self.layers[i].params
 
         self.layers[self.number_of_layers] = OutputLayer(input=self.layers[self.number_of_layers - 1].output,
-                                                         input_dim=self.layers[self.number_of_layers -1].output_dim, output_dim=self.output_dim)
+                                                         input_dim=self.layers[self.number_of_layers -1].output_dim, output_dim=self.output_dim,random_state=self.random_state)
 
         params += self.layers[self.number_of_layers].params
+        _EPSILON = 10e-8
 
-        cost = T.sum(T.nnet.categorical_crossentropy(self.layers[self.number_of_layers].probabilities[-1], y[-1]))
-        grads = T.grad(cost, params)
+        cost = T.sum(T.nnet.categorical_crossentropy(T.clip(self.layers[self.number_of_layers].probabilities[-1], _EPSILON, 1.0 - _EPSILON),y))
+        #grads = T.grad(cost, params)
 
-        updates =  [(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
-        #updates =  self.adam(cost,params)
+        #updates = [(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
+        updates =  self.adam(cost,params)
 
-        self.sgd_step = theano.function([x,drop_masks, y], [cost], updates=updates)
-        self.predict = theano.function([x,drop_masks],self.layers[self.number_of_layers].predictions)
+        self.sgd_step = theano.function([x,drop_masks, y], cost, updates=updates)
+        self.predict = theano.function([x,drop_masks],self.layers[self.number_of_layers].probabilities[-1])
 
         self.test_model = theano.function([x,drop_masks, y], cost)
 
 
-    def adam(self,loss, all_params, learning_rate=0.0002, beta1=0.1, beta2=0.001,
-         epsilon=1e-8, gamma=1-1e-7):
+    def adam(self,loss, all_params, learning_rate=0.0005, beta1=0.9, beta2=0.999, epsilon=1e-8,
+         gamma=1-1e-8):
         """
         ADAM update rules
         Default values are taken from [Kingma2014]
@@ -116,12 +117,15 @@ class LSTMNetwork(object):
             # For each training example...
             for i in np.random.permutation(len(y_train)):
                 # One SGD step
-                s_out = np.zeros((len(X_train[i]),self.output_dim),dtype=np.float32)
-                s_out[-1] = y_train[i]
-                self.sgd_step(np.asarray(X_train[i], dtype=np.float32),
+                y_train[i]
+                cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32),
                                [np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
-                               ,s_out)
+                               ,y_train[i].astype(np.int32))
+                print(cost)
 
+            print("Accuracy on dev: ")
+            self.test_dev(X_dev,y_dev)
+            print("Accuracy on train: ")
             self.test_dev(X_train,y_train)
 
     def test_dev(self,X_dev,y_dev):
@@ -136,11 +140,11 @@ class LSTMNetwork(object):
 
         accuracy = correct / len(X_dev)
 
-        print("Accuracy on dev: %f" %accuracy)
+        print(accuracy)
 
 
     @staticmethod
-    def train_1layaer_glove_wordembedding():
+    def train_1layer_glove_wordembedding(hidden_dim,modelfile):
         train = {}
         test = {}
         dev = {}
@@ -161,10 +165,22 @@ class LSTMNetwork(object):
         embedded_dev, dev_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="dev",representation="glove.840B.300d")
         embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
 
-        lstm = LSTMNetwork(input_dim=len(embedded_train[0][0]),output_dim=len(train_labels[0]),number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.01)
+        lstm = LSTMNetwork(input_dim=len(embedded_train[0][0]),output_dim=len(train_labels[0]),number_of_layers=1, hidden_dims=[hidden_dim],dropout_p=0.5,learning_rate=0.01)
         lstm.build_model_1()
 
         lstm.train(embedded_train,train_labels,embedded_dev,dev_labels)
+        lstm.save_model(modelfile)
+
+    def save_model(self,modelfile):
+        with open(modelfile) as f:
+            f.dump(self,f)
+
+    @staticmethod
+    def load_model(modelfile):
+        with open(modelfile) as f:
+            return f.load(f)
+
+
 
 
 

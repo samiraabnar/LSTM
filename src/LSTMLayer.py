@@ -35,52 +35,52 @@ class LSTMLayer(object):
 
     def initialize_params(self):
         U_input = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.input_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
         U_forget = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.input_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
         U_output = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.input_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
 
         W_input = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.output_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
         W_forget = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.output_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
         W_output = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.output_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
 
         U = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.input_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
         W = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
-                                      np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.uniform(-np.sqrt(1.0 / (self.output_dim + self.output_dim)),
+                                      np.sqrt(1.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
