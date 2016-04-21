@@ -13,6 +13,8 @@ from LSTM.src.WordEmbeddingLayer import *
 from Util.util.data.DataPrep import *
 from Util.util.file.FileUtil import *
 from WordEmbeddingLayer import *
+from Util.util.nnet.LearningAlgorithms import *
+
 
 class LSTMNetwork(object):
     def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.5,learning_rate=0.1):
@@ -36,81 +38,30 @@ class LSTMNetwork(object):
 
         self.layers[0] = LSTMLayer(random_state=self.random_state,input=x,drop_masks=drop_masks,input_dim=self.input_dim,output_dim=self.hidden_dims[0])
         params = self.layers[0].params
-        for i in np.arange(1,self.number_of_layers):
-            self.layers[i] = LSTMLayer(random_state=self.random_state,input=self.layers[i-1].output,drop_masks=np.ones_like(drop_masks,dtype=np.float32),input_dim=self.layers[i-1].output_dim,output_dim=self.hidden_dims[i])
-            params += self.layers[i].params
 
-        self.layers[self.number_of_layers] = OutputLayer(input=self.layers[self.number_of_layers - 1].output,
-                                                         input_dim=self.layers[self.number_of_layers -1].output_dim, output_dim=self.output_dim,random_state=self.random_state)
+        self.layers[1] = OutputLayer(input=self.layers[0].output,
+                                                         input_dim=self.layers[0].output_dim, output_dim=self.output_dim,random_state=self.random_state)
 
-        params += self.layers[self.number_of_layers].params
+        params += self.layers[1].params
         _EPSILON = 10e-8
 
-        cost = T.sum(T.nnet.categorical_crossentropy(T.clip(self.layers[self.number_of_layers].probabilities[-1], _EPSILON, 1.0 - _EPSILON),y))
+        L1 = 0.001 * T.sum([T.sum(param) for param in params])
+        L2 = 0.001 * T.sum([T.sum(param ** param) for param in params])
+        cost = T.sum(T.nnet.categorical_crossentropy(T.clip(self.layers[self.number_of_layers].probabilities[-1], _EPSILON, 1.0 - _EPSILON),y)) + L1 + L2
+
         #grads = T.grad(cost, params)
 
         #updates = [(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
-        updates =  self.adam(cost,params)
+        updates =  LearningAlgorithms.adam(cost,params,learning_rate=0.001)
 
-        self.sgd_step = theano.function([x,drop_masks, y], cost, updates=updates)
+        self.sgd_step = theano.function([x,drop_masks, y], L1, updates=updates)
         self.predict = theano.function([x,drop_masks],self.layers[self.number_of_layers].probabilities[-1])
 
         self.test_model = theano.function([x,drop_masks, y], cost)
 
 
-    def adam(self,loss, all_params, learning_rate=0.0005, beta1=0.9, beta2=0.999, epsilon=1e-8,
-         gamma=1-1e-8):
-        """
-        ADAM update rules
-        Default values are taken from [Kingma2014]
-        References:
-        [Kingma2014] Kingma, Diederik, and Jimmy Ba.
-        "Adam: A Method for Stochastic Optimization."
-        arXiv preprint arXiv:1412.6980 (2014).
-        :parameters:
-            - loss : Theano expression
-                specifying loss
-            - all_params : list of theano.tensors
-                Gradients are calculated w.r.t. tensors in all_parameters
-            - learning_Rate : float
-            - beta1 : float
-                Exponentioal decay rate on 1. moment of gradients
-            - beta2 : float
-                Exponentioal decay rate on 2. moment of gradients
-            - epsilon : float
-                For numerical stability
-            - gamma: float
-                Decay on first moment running average coefficient
-            - Returns: list of update rules
-        """
 
-        updates = []
-        all_grads = theano.grad(loss, all_params)
 
-        i = theano.shared(np.float32(1))  # HOW to init scalar shared?
-        i_t = i + 1.
-        fix1 = 1. - (1. - beta1)**i_t
-        fix2 = 1. - (1. - beta2)**i_t
-        beta1_t = 1-(1-beta1)*gamma**(i_t-1)   # ADDED
-        learning_rate_t = learning_rate * (T.sqrt(fix2) / fix1)
-
-        for param_i, g in zip(all_params, all_grads):
-            m = theano.shared(
-                np.zeros(param_i.get_value().shape, dtype=theano.config.floatX))
-            v = theano.shared(
-                np.zeros(param_i.get_value().shape, dtype=theano.config.floatX))
-
-            m_t = (beta1_t * g) + ((1. - beta1_t) * m) # CHANGED from b_t TO use beta1_t
-            v_t = (beta2 * g**2) + ((1. - beta2) * v)
-            g_t = m_t / (T.sqrt(v_t) + epsilon)
-            param_i_t = param_i - (learning_rate_t * g_t)
-
-            updates.append((m, m_t))
-            updates.append((v, v_t))
-            updates.append((param_i, param_i_t) )
-        updates.append((i, i_t))
-
-        return updates
 
     def train(self, X_train, y_train,X_dev,y_dev,nepoch=100):
         for epoch in range(nepoch):

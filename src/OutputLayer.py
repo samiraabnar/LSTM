@@ -27,7 +27,7 @@ class OutputLayer(object): #Y = softmax( Wx + bias)
         self.params = [self.W, self.bias]
 
     def negative_log_likelihood(self,train_y):
-        return -T.mean(T.log(self.probabilities)[T.arange(train_y.shape[0]), train_y])
+        return -T.mean(T.log(self.probabilities[0])[T.argmax(train_y)])
 
     def errors(self,y):
         return T.mean(T.neq(self.predictions, y))
