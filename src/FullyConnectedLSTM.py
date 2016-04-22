@@ -1,4 +1,5 @@
 import numpy as np
+import pickle
 import theano
 import theano.tensor as T
 
@@ -53,7 +54,7 @@ class FullyConnectedLSTM(object):
         #grads = T.grad(cost, params)
 
         #updates = [(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
-        updates =  LearningAlgorithms.adam(cost,params,lr=0.001)
+        updates =  LearningAlgorithms.adam(cost,params,lr=0.005)
 
         self.sgd_step = theano.function([x,y],cost, updates=updates)
         self.predict = theano.function([x],self.layers[0].output[-1])
@@ -114,13 +115,13 @@ class FullyConnectedLSTM(object):
         flstm.save_model(modelfile)
 
     def save_model(self,modelfile):
-        with open(modelfile,"w") as f:
-            f.dump(self,f)
+        with open(modelfile,"wb") as f:
+            pickle.dump(self.layers,f)
 
     @staticmethod
     def load_model(modelfile):
-        with open(modelfile,"r") as f:
-            return f.load(f)
+        with open(modelfile,"rb") as f:
+            return pickle.load(f)
 
 
 
