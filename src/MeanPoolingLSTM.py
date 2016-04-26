@@ -116,17 +116,36 @@ class MeanPoolingLSTM(object):
         flstm.train(embedded_train,train_labels,embedded_dev,dev_labels)
         flstm.save_model(modelfile)
 
-    def save_model(self,modelfile):
+        def save_model(self,modelfile):
         with open(modelfile,"wb") as f:
-            pickle.dump(self.layers,f)
+            cPickle.dump(self.layers,f,protocol=cPickle.HIGHEST_PROTOCOL)
+
+        with open("params_"+modelfile,"wb") as f:
+            for layer_key in self.layers.keys():
+                cPickle.dump(self.layers[layer_key].params,f,protocol=cPickle.HIGHEST_PROTOCOL)
 
     @staticmethod
     def load_model(modelfile):
+        layers = {}
         with open(modelfile,"rb") as f:
-            return pickle.load(f)
+            layers = cPickle.load(f)
+        with open("params_"+modelfile,"rb") as f:
+            for layer_key in layers.keys():
+               layers [layer_key].params = cPickle.load(f)
+
+        n_of_layers=len(layers.keys())
+
+        flstm = FullyConnectedLSTM(input_dim=layers[0].input_dim,output_dim=layers[n_of_layers-1].output_dim,number_of_layers=n_of_layers, hidden_dims=[layers[0].output_dim])
+        flstm.build_loaded_model(layers)
+        embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
+        print("Accuracy on test: ")
+        flstm.test_dev(embedded_test[0:10],test_labels[0:10])
+        print("Accuracy on train: ")
+        embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="train",representation="glove.840B.300d")
+        flstm.test_dev(embedded_train[0:10], train_labels[0:10])
 
 
 
 
 if __name__ == '__main__':
-    MeanPoolingLSTM.train_1layer_glove_wordembedding(200,"mp_model_300.txt")
+    MeanPoolingLSTM.train_1layer_glove_wordembedding(200,"mp_model_200.txt")
