@@ -155,6 +155,7 @@ class FullyConnectedLSTM(object):
         embedded_dev, dev_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="dev",representation="glove.840B.300d")
         #embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
 
+
         flstm = FullyConnectedLSTM(input_dim=len(embedded_train[0][0]),output_dim=len(train_labels[0]),number_of_layers=1, hidden_dims=[hidden_dim],dropout_p=0.1,learning_rate=0.01)
         flstm.build_model()
 
