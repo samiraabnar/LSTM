@@ -43,11 +43,11 @@ class LSTMLayer(object):
 
             c = forget_gate * prev_content + input_gate * stabilized_input
             s = output_gate * T.tanh(c)
-            o = T.nnet.softmax(T.dot(self.O_w,s)+self.O_bias)[0]
+            o = T.nnet.sigmoid(T.dot(self.O_w,s)+self.O_bias)
 
             return [o,s,c]
 
-        [self.output,hidden_state,memory_content] , updates = theano.scan(
+        [self.output,self.hidden_state,self.memory_content] , updates = theano.scan(
             forward_step,
             sequences=[self.input],
             truncate_gradient=self.bptt_truncate,
