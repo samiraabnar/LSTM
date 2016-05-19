@@ -121,24 +121,27 @@ class FullyConnectedLSTM(object):
         #error1 = T.sum(T.nnet.binary_crossentropy(self.layers[0].output[-1],y))
         #error2 = T.sum(T.nnet.binary_crossentropy(self.layers[0].hidden_state,next_x))
         error1 = T.sum((self.layers[0].output[-1] - y) ** 2)
-        error2 = T.sum(T.sqrt(T.sum((self.layers[0].hidden_state - next_x) ** 2,axis=1)))
-        cost =  T.erf(error1) + T.erf(error2)  #+ L1 + L2
-        cost1 = error1  #+ L1 + L2
+        error2 = T.mean(T.sqrt(T.sum((self.layers[0].hidden_state - next_x) ** 2,axis=1)))
+        #p = theano.shared(value=0, name="count", borrow="True")
+        cost = T.erf(error2) # T.erf(error1) + + L1 + L2
 
         grads = T.grad(cost, params)
-        self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
-        self.total_grad = [ theano.shared(value=np.zeros(grad.broadcastable,dtype=theano.config.floatX)) for grad in grads]
-        self.count = theano.shared(value=0, name="count", borrow="True")
+        #self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
+        #self.total_grad = [theano.shared(value=np.zeros(shape=grad.shape,dtype=theano.config.floatX)) for grad in grads]
+        #self.count = theano.shared(value=0, name="count", borrow="True")
         self.learning_rate = 0.005
-        updates = []#[(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX)),(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
-        updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
-      #  updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
+        updates = [] #[(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX))]
+        #updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
+        #updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
 
-       # updates += [(param_i, T.switch(T.lt(self.count, 20),param_i,param_i - self.learning_rate * grad_i)) for param_i,grad_i in zip(params,self.total_grad)]
+        #updates += [(param_i, T.switch(T.lt(self.count, 20),param_i,param_i - self.learning_rate * grad_i)) for param_i,grad_i in zip(params,self.total_grad)]
         #updates =  LearningAlgorithms.adam(cost,params,lr=0.001)
         #self.batch_size = 32
         #G = [ T.tensor(dtype=theano.config.floatX,broadcastable=param.broadcastable) for i in range(self.batch_size) for param in params]
         #updates = [G[i] for i in range(len(params))]
+
+        updates += [(param_i,param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
+
 
         """for i in range(len(params)):
             for j in range(1, int(len(G)/len(params))):
@@ -149,25 +152,27 @@ class FullyConnectedLSTM(object):
 
         self.update = theano.function(G,updates=updates)"""
 
-        self.sgd_step = theano.function([x,y,next_x],self.total_cost, updates=updates)
+        self.sgd_step = theano.function([x,next_x],cost, updates=updates)
         self.predict = theano.function([x],self.layers[0].output[-1])
 
-        self.test_model = theano.function([x,y], cost1)
+        self.test_model = theano.function([x,next_x], cost)
 
 
     def train(self, X_train, y_train,X_dev,y_dev,nepoch=100):
         for epoch in range(nepoch):
             grads = []
             # For each training example...
+            iteration = 0
             for i in np.random.permutation(len(y_train)):
-                print("iteration "+str(i))
+                print("iteration "+str(iteration))
+                iteration += 1
                 # One SGD step
                 y_train[i]
                 next_X = X_train[i][1:]
                 next_X.append(np.zeros_like(X_train[i][0]))
                 cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                #,[np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
-                               ,y_train[i].astype(np.int32)
+                               #,np.asarray(y_train[i] , dtype=np.int32)
                                 ,np.asarray(next_X,dtype=np.float32)
                                      )
                 """ grads.append(grad)
@@ -177,11 +182,10 @@ class FullyConnectedLSTM(object):
                     grads = []"""
                 print(cost)
 
-
-            print("Accuracy on dev: ")
-            self.test_dev(X_dev,y_dev)
-            print("Accuracy on train: ")
-            self.test_dev(X_train,y_train)
+            #print("Accuracy on dev: ")
+            #self.test_dev(X_dev,y_dev)
+            #print("Accuracy on train: ")
+            #self.test_dev(X_train,y_train)
 
     def test_dev(self,X_dev,y_dev):
         if len(y_dev[0]) > 1:

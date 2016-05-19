@@ -141,4 +141,6 @@ class LSTMLayer(object):
         self.O_bias = theano.shared(value=O_bias, name="O_bias"+self.layer_id, borrow="True")
 
         self.params = [self.U_input, self.U_forget, self.U_output, self.W_input, self.W_forget, self.W_output,
-                       self.bias_input, self.bias_forget, self.bias_output, self.U, self.W, self.bias,self.O_w,self.O_bias]
+                       self.bias_input, self.bias_forget, self.bias_output, self.U, self.W, self.bias]
+
+        self.output_params = [self.O_w,self.O_bias]
