@@ -24,7 +24,7 @@ from six.moves import cPickle
 from keras.datasets import imdb
 
 class FullyConnectedLSTM(object):
-    def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.1,learning_rate=0.1):
+    def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.0,learning_rate=0.1):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.number_of_layers = number_of_layers
@@ -105,6 +105,14 @@ class FullyConnectedLSTM(object):
                                              outer_output_dim=self.output_dim,
                                              random_state=self.random_state,layer_id="_0")
         params += self.layers[0].params
+        params += self.layers[0].output_params
+
+        """self.layers[1] = LSTMLayer(input=x,
+                                             input_dim=self.input_dim,
+                                             output_dim=self.hidden_dims[0],
+                                             outer_output_dim=self.output_dim,
+                                             random_state=self.random_state,layer_id="_0")
+        params += self.layers[1].params"""
 
         """self.layers[1] = FullyConnectedLayer(input=self.layers[0].output[-1],
                                              input_dim=self.layers[0].output_dim,
@@ -123,19 +131,19 @@ class FullyConnectedLSTM(object):
         error1 = T.sum((self.layers[0].output[-1] - y) ** 2)
         error2 = T.mean(T.sqrt(T.sum((self.layers[0].hidden_state - next_x) ** 2,axis=1)))
         #p = theano.shared(value=0, name="count", borrow="True")
-        cost = T.erf(error2) # T.erf(error1) + + L1 + L2
+        cost = T.sum(T.nnet.binary_crossentropy((self.layers[0].output[-1]+0.0000001),y))#T.erf(error1) # T.erf(error1) + + L1 + L2
 
         grads = T.grad(cost, params)
         #self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
         #self.total_grad = [theano.shared(value=np.zeros(shape=grad.shape,dtype=theano.config.floatX)) for grad in grads]
         #self.count = theano.shared(value=0, name="count", borrow="True")
-        self.learning_rate = 0.005
+        self.learning_rate = 0.2
         updates = [] #[(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX))]
         #updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
         #updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
 
         #updates += [(param_i, T.switch(T.lt(self.count, 20),param_i,param_i - self.learning_rate * grad_i)) for param_i,grad_i in zip(params,self.total_grad)]
-        #updates =  LearningAlgorithms.adam(cost,params,lr=0.001)
+        #updates =  LearningAlgorithms.adam(cost,params,lr=0.1)
         #self.batch_size = 32
         #G = [ T.tensor(dtype=theano.config.floatX,broadcastable=param.broadcastable) for i in range(self.batch_size) for param in params]
         #updates = [G[i] for i in range(len(params))]
@@ -152,19 +160,21 @@ class FullyConnectedLSTM(object):
 
         self.update = theano.function(G,updates=updates)"""
 
-        self.sgd_step = theano.function([x,next_x],cost, updates=updates)
+        self.sgd_step = theano.function([x,y],cost, updates=updates)
         self.predict = theano.function([x],self.layers[0].output[-1])
 
-        self.test_model = theano.function([x,next_x], cost)
+        self.test_model = theano.function([x,y], cost)
 
 
     def train(self, X_train, y_train,X_dev,y_dev,nepoch=100):
+        #X_train = X_train[0:1]
+        #y_train = y_train[0:1]
         for epoch in range(nepoch):
             grads = []
             # For each training example...
             iteration = 0
-            for i in np.random.permutation(len(y_train)):
-                print("iteration "+str(iteration))
+            for i in np.random.permutation(len(X_train)):
+                #print("iteration "+str(iteration))
                 iteration += 1
                 # One SGD step
                 y_train[i]
@@ -172,20 +182,20 @@ class FullyConnectedLSTM(object):
                 next_X.append(np.zeros_like(X_train[i][0]))
                 cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                #,[np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
-                               #,np.asarray(y_train[i] , dtype=np.int32)
-                                ,np.asarray(next_X,dtype=np.float32)
+                               ,np.asarray(y_train[i] , dtype=np.int32)
+                               # ,np.asarray(next_X,dtype=np.float32)
                                      )
                 """ grads.append(grad)
                 if((i+1) % self.batch_size) == 0:
                     print("updating grads")
                  #   self.update(np.asarray(grads, dtype=np.float32))
                     grads = []"""
-                print(cost)
+                #print(cost)
 
             #print("Accuracy on dev: ")
             #self.test_dev(X_dev,y_dev)
-            #print("Accuracy on train: ")
-            #self.test_dev(X_train,y_train)
+            print("Accuracy on train: ")
+            self.test_dev(X_train,y_train)
 
     def test_dev(self,X_dev,y_dev):
         if len(y_dev[0]) > 1:
@@ -203,12 +213,18 @@ class FullyConnectedLSTM(object):
             correct = 0.0
             pc_sentiment = np.zeros(len(X_dev))
             for i in np.arange(len(X_dev)):
-                pc_sentiment[i] = (abs(np.round(self.predict(np.asarray(X_dev[i],dtype=np.float32))[0]*3.0 - 1
+                pred = self.predict(np.asarray(X_dev[i],dtype=np.float32))[0]
+                #print(str(pred)+" "+str(y_dev[i][0]))
+
+                pc_sentiment[i] = (np.floor(pred*3.0)+ 1.00) / 3.00
                                                          #,np.ones((len(X_dev[i]),self.input_dim),dtype=np.float32)
-                                                         )) + 1.0) / 3.00
+
             for i in np.arange(len(X_dev)):
                 if pc_sentiment[i] == y_dev[i][0]:
                     correct += 1
+
+
+
 
 
         accuracy = correct / len(X_dev)
@@ -280,11 +296,13 @@ class FullyConnectedLSTM(object):
         flstm = FullyConnectedLSTM(input_dim=layers[0].input_dim,output_dim=layers[n_of_layers-1].output_dim,number_of_layers=n_of_layers, hidden_dims=[layers[0].output_dim])
         flstm.build_loaded_model(layers)
         embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
+        test_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in test_labels ]
         print("Accuracy on test: ")
-        flstm.test_dev(embedded_test[0:10],test_labels[0:10])
+        flstm.test_dev(embedded_test,test_labels)
         print("Accuracy on train: ")
         embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="train",representation="glove.840B.300d")
-        flstm.test_dev(embedded_train[0:10], train_labels[0:10])
+        train_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in train_labels ]
+        flstm.test_dev(embedded_train, train_labels)
         return flstm
 
 
@@ -345,18 +363,58 @@ class FullyConnectedLSTM(object):
         plt.show()
 
 
+    @staticmethod
+    def show_sentiment_path_1D(sentence,vocab_representation,flstm):
+        tokens = sentence.split()
+        embedded = vocab_representation.embed([tokens])[0]
+
+        predictions = []
+        labels = []
+        gates = []
+        for i in np.arange(0,len(embedded)):
+            labels.append(tokens[i])
+            predictions.append(flstm.predict(np.asarray(embedded[0:i+1],dtype=np.float32)).tolist())
+            gates = flstm.get_gates(np.asarray(embedded[0:i+1],dtype=np.float32))
+
+        vis_data = predictions
+
+        fig = plt.figure()
+        ax = {}
+        ax[0] = fig.add_subplot(111)
+
+        fig2 = plt.figure()
+
+        for i in np.arange(0,len(gates)):
+            for k in np.arange(0,len(embedded)):
+                ax[1+(i*len(tokens))+k] = fig2.add_subplot(4,len(tokens),(i*len(tokens))+k+1)
+                ax[1+(i*len(tokens))+k].bar(np.arange(len(gates[i][k])),gates[i][k],0.1)
+                ax[1+(i*len(tokens))+k].set_ylim(0,1.0)
+                if(i == 0):
+                    ax[1+(i*len(tokens))+k].set_title(tokens[k])
+
+
+
+        vis_x = [i for i in np.arange(len(vis_data))]
+        vis_y = [p[0] for p in vis_data]
+
+        ax[0].plot(vis_x, vis_y, linestyle='-')
+        ax[0].scatter(vis_x, vis_y,marker='o')
+        for label, x,y in zip(labels, vis_x,vis_y):
+            ax[0].text(x,y,label)
+
+        plt.show()
 
 
 
 
     @staticmethod
     def analyse():
-        flstm = FullyConnectedLSTM.load_model("test_model.txt")
+        flstm = FullyConnectedLSTM.load_model("test_model_diffdim.txt")
 
         vocab_representation = WordEmbeddingLayer()
         vocab_representation.load_filtered_embedding("../data/filtered_glove.840B.300d")
 
-        FullyConnectedLSTM.show_sentiment_path("he is a bad actor , but his play is good !",vocab_representation,flstm)
+        FullyConnectedLSTM.show_sentiment_path_1D("he is a bad actor , but his play is good !",vocab_representation,flstm)
         embed_sent = vocab_representation.embed(sentences=[["bad","!"]])[0]
         print("bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
 
@@ -490,7 +548,7 @@ class FullyConnectedLSTM(object):
 
 
 if __name__ == '__main__':
-    FullyConnectedLSTM.train_1layer_glove_wordembedding(300,"test_model_diffdim.txt")
-    #FullyConnectedLSTM.load_model("test_model.txt")
-    #FullyConnectedLSTM.analyse()
+    #FullyConnectedLSTM.train_1layer_glove_wordembedding(300,"test_model_diffdim.txt")
+    #FullyConnectedLSTM.load_model("test_model_diffdim.txt") #("test_model.txt")
+    FullyConnectedLSTM.analyse()
 
