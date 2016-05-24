@@ -192,8 +192,8 @@ class FullyConnectedLSTM(object):
                     grads = []"""
                 #print(cost)
 
-            #print("Accuracy on dev: ")
-            #self.test_dev(X_dev,y_dev)
+            print("Accuracy on dev: ")
+            self.test_dev(X_dev,y_dev)
             print("Accuracy on train: ")
             self.test_dev(X_train,y_train)
 
@@ -298,11 +298,11 @@ class FullyConnectedLSTM(object):
         embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
         test_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in test_labels ]
         print("Accuracy on test: ")
-        flstm.test_dev(embedded_test,test_labels)
+        #flstm.test_dev(embedded_test,test_labels)
         print("Accuracy on train: ")
         embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="train",representation="glove.840B.300d")
         train_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in train_labels ]
-        flstm.test_dev(embedded_train, train_labels)
+        #flstm.test_dev(embedded_train, train_labels)
         return flstm
 
 
@@ -364,43 +364,71 @@ class FullyConnectedLSTM(object):
 
 
     @staticmethod
-    def show_sentiment_path_1D(sentence,vocab_representation,flstm):
-        tokens = sentence.split()
-        embedded = vocab_representation.embed([tokens])[0]
-
-        predictions = []
-        labels = []
-        gates = []
-        for i in np.arange(0,len(embedded)):
-            labels.append(tokens[i])
-            predictions.append(flstm.predict(np.asarray(embedded[0:i+1],dtype=np.float32)).tolist())
-            gates = flstm.get_gates(np.asarray(embedded[0:i+1],dtype=np.float32))
-
-        vis_data = predictions
+    def show_sentiment_path_1D(sentences,vocab_representation,flstm):
 
         fig = plt.figure()
         ax = {}
-        ax[0] = fig.add_subplot(111)
+        ax[0] = fig.add_subplot(221)
+        ax["output_gate"] = fig.add_subplot(222)
+        ax["forget_gate"] = fig.add_subplot(223)
+        ax["input_gate"] = fig.add_subplot(224)
 
-        fig2 = plt.figure()
-
-        for i in np.arange(0,len(gates)):
-            for k in np.arange(0,len(embedded)):
-                ax[1+(i*len(tokens))+k] = fig2.add_subplot(4,len(tokens),(i*len(tokens))+k+1)
-                ax[1+(i*len(tokens))+k].bar(np.arange(len(gates[i][k])),gates[i][k],0.1)
-                ax[1+(i*len(tokens))+k].set_ylim(0,1.0)
-                if(i == 0):
-                    ax[1+(i*len(tokens))+k].set_title(tokens[k])
+        for i in np.arange(0,1):
+            sentence = sentences[i]
+            tokens = sentence.split()
+            embedded = vocab_representation.embed([tokens])[0]
 
 
+            predictions = []
+            labels = []
+            input_gates = []
+            output_gates = []
+            forget_gates = []
+            for i in np.arange(0,len(embedded)):
+                labels.append(tokens[i])
+                predictions.append(flstm.predict(np.asarray(embedded[0:i+1],dtype=np.float32)).tolist())
+                gates = flstm.get_gates(np.asarray(embedded[0:i+1],dtype=np.float32))
+                input_gates.append(gates[1])
+                forget_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(),gates[2][-1].transpose()))
+                output_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(),gates[3][-1].transpose()))
 
-        vis_x = [i for i in np.arange(len(vis_data))]
-        vis_y = [p[0] for p in vis_data]
+            vis_data = predictions
 
-        ax[0].plot(vis_x, vis_y, linestyle='-')
-        ax[0].scatter(vis_x, vis_y,marker='o')
-        for label, x,y in zip(labels, vis_x,vis_y):
-            ax[0].text(x,y,label)
+
+
+
+
+
+            vis_x = [i for i in np.arange(len(vis_data))]
+            vis_y = [p[0] for p in vis_data]
+
+            ax[0].plot(vis_x, vis_y, linestyle='-')
+            ax[0].scatter(vis_x, vis_y,marker='o')
+            for label, x,y in zip(labels, vis_x,vis_y):
+                ax[0].text(x,y,label)
+
+
+            vis_data2 = output_gates
+
+
+
+            vis_x2 = [i for i in np.arange(len(vis_data2))]
+            vis_y2 = [p[0] for p in vis_data2]
+
+            ax["output_gate"].plot(vis_x2, vis_y2, linestyle='-')
+            ax["output_gate"].scatter(vis_x2, vis_y2,marker='o')
+            for label, x,y in zip(labels, vis_x2,vis_y2):
+                ax["output_gate"].text(x,y,label)
+
+            vis_data2 = forget_gates
+
+            vis_x2 = [i for i in np.arange(len(vis_data2))]
+            vis_y2 = [p[0] for p in vis_data2]
+
+            ax["forget_gate"].plot(vis_x2, vis_y2, linestyle='-')
+            ax["forget_gate"].scatter(vis_x2, vis_y2, marker='o')
+            for label, x, y in zip(labels, vis_x2, vis_y2):
+                ax["forget_gate"].text(x, y, label)
 
         plt.show()
 
@@ -414,7 +442,15 @@ class FullyConnectedLSTM(object):
         vocab_representation = WordEmbeddingLayer()
         vocab_representation.load_filtered_embedding("../data/filtered_glove.840B.300d")
 
-        FullyConnectedLSTM.show_sentiment_path_1D("he is a bad actor , but his play is good !",vocab_representation,flstm)
+        FullyConnectedLSTM.show_sentiment_path_1D(
+            ["he is a bad actor , but his play is good !"
+             ,"the movie made by a good man is bad ."
+             ,"the movie made by a good man is bad ."
+        ,"the actor is bad, but he played good !"
+        , "he played good !"
+        , "they made a bad movie from a good story !"
+        , "although he is a bad actor, he played good !"
+        ],vocab_representation,flstm)
         embed_sent = vocab_representation.embed(sentences=[["bad","!"]])[0]
         print("bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
 
@@ -548,7 +584,7 @@ class FullyConnectedLSTM(object):
 
 
 if __name__ == '__main__':
-    #FullyConnectedLSTM.train_1layer_glove_wordembedding(300,"test_model_diffdim.txt")
+    FullyConnectedLSTM.train_1layer_glove_wordembedding(10,"test_model_diffdim_50.txt")
     #FullyConnectedLSTM.load_model("test_model_diffdim.txt") #("test_model.txt")
-    FullyConnectedLSTM.analyse()
+    #FullyConnectedLSTM.analyse()
 
