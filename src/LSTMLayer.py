@@ -55,7 +55,6 @@ class LSTMLayer(object):
                           dict(initial=T.zeros(self.output_dim,dtype=theano.config.floatX))
                           ])
 
-
     def initialize_params(self):
         U_input = np.asarray(
             self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),

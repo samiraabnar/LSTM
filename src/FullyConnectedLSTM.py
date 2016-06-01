@@ -1,20 +1,22 @@
+from sklearn import manifold
+
 import numpy as np
 import pickle
 import theano
 import theano.tensor as T
 import matplotlib.pyplot as plt
+from matplotlib import offsetbox
 from sklearn.manifold import TSNE
 from mpl_toolkits.mplot3d import Axes3D
 
-
 import sys
+
 sys.path.append('../../')
 
 from LSTM.src.LSTMLayer import *
 from LSTM.src.FullyConnectedLayer import *
 from LSTM.src.OutputLayer import *
 from LSTM.src.WordEmbeddingLayer import *
-
 
 from Util.util.data.DataPrep import *
 from Util.util.file.FileUtil import *
@@ -23,8 +25,9 @@ from Util.util.nnet.LearningAlgorithms import *
 from six.moves import cPickle
 from keras.datasets import imdb
 
+
 class FullyConnectedLSTM(object):
-    def __init__(self, input_dim,output_dim,number_of_layers=1, hidden_dims=[100],dropout_p=0.0,learning_rate=0.1):
+    def __init__(self, input_dim, output_dim, number_of_layers=1, hidden_dims=[100], dropout_p=0.0, learning_rate=0.1):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.number_of_layers = number_of_layers
@@ -33,52 +36,51 @@ class FullyConnectedLSTM(object):
         self.learning_rate = learning_rate
         self.dropout_p = dropout_p
 
-
         self.layers = {}
 
-    def build_loaded_model(self,layers):
+    def build_loaded_model(self, layers):
         x = T.matrix('x').astype(theano.config.floatX)
         self.layers = layers
-        self.predict = theano.function([self.layers[0].input],self.layers[self.number_of_layers - 1].output[-1])
+        self.predict = theano.function([self.layers[0].input], self.layers[self.number_of_layers - 1].output[-1])
 
-        U_i,U_f,U_o,U,W_i,W_f,W_o,W,b_i,b_f,b_o,b = self.layers[0].U_input, self.layers[0].U_forget, self.layers[0].U_output,self.layers[0].U,\
-                                                    self.layers[0].W_input, self.layers[0].W_forget, self.layers[0].W_output,self.layers[0].W, \
-                                                    self.layers[0].bias_input, self.layers[0].bias_forget, self.layers[0].bias_output \
-                                                    ,self.layers[0].bias
-        def forward_step(x_t, prev_state,prev_content):
-            input_gate = T.nnet.hard_sigmoid(T.dot((U_i),x_t) + T.dot(W_i,prev_state) + b_i)
-            forget_gate = T.nnet.hard_sigmoid(T.dot((U_f),x_t) + T.dot(W_f,prev_state)+ b_f)
-            output_gate = T.nnet.hard_sigmoid(T.dot((U_o),x_t) + T.dot(W_o,prev_state)+ b_o)
+        U_i, U_f, U_o, U, W_i, W_f, W_o, W, b_i, b_f, b_o, b = self.layers[0].U_input, self.layers[0].U_forget, \
+                                                               self.layers[0].U_output, self.layers[0].U, \
+                                                               self.layers[0].W_input, self.layers[0].W_forget, \
+                                                               self.layers[0].W_output, self.layers[0].W, \
+                                                               self.layers[0].bias_input, self.layers[0].bias_forget, \
+                                                               self.layers[0].bias_output \
+            , self.layers[0].bias
 
+        def forward_step(x_t, prev_state, prev_content):
+            input_gate = T.nnet.hard_sigmoid(T.dot((U_i), x_t) + T.dot(W_i, prev_state) + b_i)
+            forget_gate = T.nnet.hard_sigmoid(T.dot((U_f), x_t) + T.dot(W_f, prev_state) + b_f)
+            output_gate = T.nnet.hard_sigmoid(T.dot((U_o), x_t) + T.dot(W_o, prev_state) + b_o)
 
-
-            stabilized_input = T.tanh(T.dot((U),x_t) + T.dot(W,prev_state) + b)
+            stabilized_input = T.tanh(T.dot((U), x_t) + T.dot(W, prev_state) + b)
 
             c = forget_gate * prev_content + input_gate * stabilized_input
             s = output_gate * T.tanh(c)
             o = T.nnet.softmax(s)[0]
 
-            return [o,s,c,input_gate,forget_gate,output_gate]
+            return [o, s, c, input_gate, forget_gate, output_gate]
 
-        [self.output,hidden_state,memory_content,self.input_gate,self.forget_gate,self.output_gate] , updates = theano.scan(
+        [self.output, hidden_state, memory_content, self.input_gate, self.forget_gate,
+         self.output_gate], updates = theano.scan(
             forward_step,
             sequences=[x],
             truncate_gradient=-1,
-            outputs_info=[None,dict(initial=T.zeros(self.output_dim,dtype=theano.config.floatX)),
-                          dict(initial=T.zeros(self.output_dim,dtype=theano.config.floatX))
-                          ,None,None,None
+            outputs_info=[None, dict(initial=T.zeros(self.output_dim, dtype=theano.config.floatX)),
+                          dict(initial=T.zeros(self.output_dim, dtype=theano.config.floatX))
+                , None, None, None
                           ])
 
-
-        self.get_gates =theano.function([x],[self.output,self.input_gate,self.forget_gate,self.output_gate])
-
-
+        self.get_gates = theano.function([x], [self.output, self.input_gate, self.forget_gate, self.output_gate])
 
     def build_model(self):
         x = T.matrix('x').astype(theano.config.floatX)
         next_x = T.matrix('n_x').astype(theano.config.floatX)
-        y = T.ivector('y')
-
+        y = T.imatrix('y')
+        dists = T.ivector('d')
         params = []
 
         """self.embedding_dim = 300
@@ -100,10 +102,10 @@ class FullyConnectedLSTM(object):
         params += [self.E]"""
 
         self.layers[0] = LSTMLayer(input=x,
-                                             input_dim=self.input_dim,
-                                             output_dim=self.hidden_dims[0],
-                                             outer_output_dim=self.output_dim,
-                                             random_state=self.random_state,layer_id="_0")
+                                   input_dim=self.input_dim,
+                                   output_dim=self.hidden_dims[0],
+                                   outer_output_dim=self.output_dim,
+                                   random_state=self.random_state, layer_id="_0")
         params += self.layers[0].params
         params += self.layers[0].output_params
 
@@ -120,36 +122,48 @@ class FullyConnectedLSTM(object):
                                              random_state=self.random_state,activation=T.nnet.softmax,layer_id="_1")
         params += self.layers[1].params"""
 
-
         """L1 = 0.0005 * T.sum([T.sum(T.abs_(param)) for param in params])
         L2 = 0.0005 * T.sum([T.sum(param ** 2) for param in params])
         off = 1e-8"""
 
-        #cost = -T.log(self.layers[0].output[-1][T.argmax(y)] + off) + L1 + L2
-        #error1 = T.sum(T.nnet.binary_crossentropy(self.layers[0].output[-1],y))
-        #error2 = T.sum(T.nnet.binary_crossentropy(self.layers[0].hidden_state,next_x))
+        # cost = -T.log(self.layers[0].output[-1][T.argmax(y)] + off) + L1 + L2
+        # error1 = T.sum(T.nnet.binary_crossentropy(self.layers[0].output[-1],y))
+        # error2 = T.sum(T.nnet.binary_crossentropy(self.layers[0].hidden_state,next_x))
         error1 = T.sum((self.layers[0].output[-1] - y) ** 2)
-        error2 = T.mean(T.sqrt(T.sum((self.layers[0].hidden_state - next_x) ** 2,axis=1)))
-        #p = theano.shared(value=0, name="count", borrow="True")
-        cost = T.sum(T.nnet.binary_crossentropy((self.layers[0].output[-1]+0.0000001),y))#T.erf(error1) # T.erf(error1) + + L1 + L2
+        error2 = T.mean(T.sqrt(T.sum((self.layers[0].hidden_state - next_x) ** 2, axis=1)))
+
+        # p = theano.shared(value=0, name="count", borrow="True")
+
+        cost = T.sum(T.sum(T.nnet.binary_crossentropy((self.layers[0].output+0.0000001),y) , axis=1) / dists) #T.erf(error1) # T.erf(error1) + + L1 + L2
+
+        # def calculate_fading_cost(output, target, d):
+
+        #    return (T.sqrt(output ** 2 - target ** 2)) * d
+
+        #[c], update = theano.scan(calculate_fading_cost, sequences=[self.layers[0].output, y,dist],
+        #                              outputs_info=[None])
+
+        #calculate_costs = theano.function([dist], [c])
+        #costs = calculate_costs(np.arange(1,100))
+        #cost = T.sum(T.sqrt(T.sum(self.layers[0].output ** 2 - y ** 2, axis=1)) / dists)
+
 
         grads = T.grad(cost, params)
-        #self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
-        #self.total_grad = [theano.shared(value=np.zeros(shape=grad.shape,dtype=theano.config.floatX)) for grad in grads]
-        #self.count = theano.shared(value=0, name="count", borrow="True")
-        self.learning_rate = 0.2
-        updates = [] #[(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX))]
-        #updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
-        #updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
+        # self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
+        # self.total_grad = [theano.shared(value=np.zeros(shape=grad.shape,dtype=theano.config.floatX)) for grad in grads]
+        # self.count = theano.shared(value=0, name="count", borrow="True")
+        self.learning_rate = 0.02
+        updates = []  # [(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX))]
+        # updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
+        # updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
 
-        #updates += [(param_i, T.switch(T.lt(self.count, 20),param_i,param_i - self.learning_rate * grad_i)) for param_i,grad_i in zip(params,self.total_grad)]
-        #updates =  LearningAlgorithms.adam(cost,params,lr=0.1)
-        #self.batch_size = 32
-        #G = [ T.tensor(dtype=theano.config.floatX,broadcastable=param.broadcastable) for i in range(self.batch_size) for param in params]
-        #updates = [G[i] for i in range(len(params))]
+        # updates += [(param_i, T.switch(T.lt(self.count, 20),param_i,param_i - self.learning_rate * grad_i)) for param_i,grad_i in zip(params,self.total_grad)]
+        # updates =  LearningAlgorithms.adam(cost,params,lr=0.1)
+        # self.batch_size = 32
+        # G = [ T.tensor(dtype=theano.config.floatX,broadcastable=param.broadcastable) for i in range(self.batch_size) for param in params]
+        # updates = [G[i] for i in range(len(params))]
 
-        updates += [(param_i,param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
-
+        updates += [(param_i, param_i - self.learning_rate * grad_i) for param_i, grad_i in zip(params, grads)]
 
         """for i in range(len(params)):
             for j in range(1, int(len(G)/len(params))):
@@ -160,49 +174,54 @@ class FullyConnectedLSTM(object):
 
         self.update = theano.function(G,updates=updates)"""
 
-        self.sgd_step = theano.function([x,y],cost, updates=updates)
-        self.predict = theano.function([x],self.layers[0].output[-1])
+        self.sgd_step = theano.function([x, y,dists], cost, updates=updates)
+        self.predict = theano.function([x], self.layers[0].output[-1])
 
-        self.test_model = theano.function([x,y], cost)
+        self.test_model = theano.function([x, y,dists], cost)
+        self.get_visualization_values = theano.function([x],
+                                                        [self.layers[0].output[-1], self.layers[0].hidden_state[-1]])
 
-
-    def train(self, X_train, y_train,X_dev,y_dev,nepoch=100):
-        #X_train = X_train[0:1]
-        #y_train = y_train[0:1]
+    def train(self, X_train, y_train, X_dev, y_dev, nepoch=100):
+        # X_train = X_train[0:1]
+        # y_train = y_train[0:1]
         for epoch in range(nepoch):
             grads = []
             # For each training example...
             iteration = 0
             for i in np.random.permutation(len(X_train)):
-                #print("iteration "+str(iteration))
+                # print("iteration "+str(iteration))
                 iteration += 1
                 # One SGD step
+
                 y_train[i]
                 next_X = X_train[i][1:]
                 next_X.append(np.zeros_like(X_train[i][0]))
-                cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
-                               #,[np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
-                               ,np.asarray(y_train[i] , dtype=np.int32)
-                               # ,np.asarray(next_X,dtype=np.float32)
+                cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [
+                    np.random.binomial(1, 1.0 - self.dropout_p, self.input_dim).astype(dtype=np.float32) for i in
+                    np.arange(len(X_train[i]))]
+                                     # ,[np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
+                                     , np.asarray([y_train[i] for k in np.arange(len(X_train[i]))], dtype=np.int32)
+                                     # ,np.asarray(next_X,dtype=np.float32)
+                                     , np.asarray([pow(c,2) for c in np.arange(len(X_train[i]),0,-1)], dtype=np.int32)
                                      )
                 """ grads.append(grad)
                 if((i+1) % self.batch_size) == 0:
                     print("updating grads")
                  #   self.update(np.asarray(grads, dtype=np.float32))
                     grads = []"""
-                #print(cost)
+                # print(cost)
 
             print("Accuracy on dev: ")
-            self.test_dev(X_dev,y_dev)
+            self.test_dev(X_dev, y_dev)
             print("Accuracy on train: ")
-            self.test_dev(X_train,y_train)
+            self.test_dev(X_train, y_train)
 
-    def test_dev(self,X_dev,y_dev):
+    def test_dev(self, X_dev, y_dev):
         if len(y_dev[0]) > 1:
             pc_sentiment = np.zeros(len(X_dev))
             for i in np.arange(len(X_dev)):
-                pc_sentiment[i] = np.argmax(self.predict(np.asarray(X_dev[i],dtype=np.float32)
-                                                         #,np.ones((len(X_dev[i]),self.input_dim),dtype=np.float32)
+                pc_sentiment[i] = np.argmax(self.predict(np.asarray(X_dev[i], dtype=np.float32)
+                                                         # ,np.ones((len(X_dev[i]),self.input_dim),dtype=np.float32)
                                                          ))
 
             correct = 0.0
@@ -213,40 +232,38 @@ class FullyConnectedLSTM(object):
             correct = 0.0
             pc_sentiment = np.zeros(len(X_dev))
             for i in np.arange(len(X_dev)):
-                pred = self.predict(np.asarray(X_dev[i],dtype=np.float32))[0]
-                #print(str(pred)+" "+str(y_dev[i][0]))
+                pred = self.predict(np.asarray(X_dev[i], dtype=np.float32))[0]
+                # print(str(pred)+" "+str(y_dev[i][0]))
 
-                pc_sentiment[i] = (np.floor(pred*3.0)+ 1.00) / 3.00
-                                                         #,np.ones((len(X_dev[i]),self.input_dim),dtype=np.float32)
+                pc_sentiment[i] = (np.floor(pred * 3.0) + 1.00) / 3.00
+                # ,np.ones((len(X_dev[i]),self.input_dim),dtype=np.float32)
 
             for i in np.arange(len(X_dev)):
                 if pc_sentiment[i] == y_dev[i][0]:
                     correct += 1
 
-
-
-
-
         accuracy = correct / len(X_dev)
 
         print(accuracy)
 
-
     @staticmethod
-    def train_1layer_glove_wordembedding(hidden_dim,modelfile):
+    def train_1layer_glove_wordembedding(hidden_dim, modelfile):
         train = {}
         test = {}
         dev = {}
 
-        embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="train",representation="glove.840B.300d")
-        embedded_dev, dev_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="dev",representation="glove.840B.300d")
-        embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
+        embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/", name="train",
+                                                                             representation="glove.840B.300d")
+        embedded_dev, dev_labels = WordEmbeddingLayer.load_embedded_data(path="../data/", name="dev",
+                                                                         representation="glove.840B.300d")
+        embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/", name="test",
+                                                                           representation="glove.840B.300d")
 
-        train_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in train_labels ]
-        dev_labels = [np.asarray([(np.argmax(dl) + 1.00 )/ 3.0]) for dl in dev_labels ]
-        #embedded_train, train_labels, word_to_index, index_to_word, labels_count = DataPrep.load_one_hot_sentiment_data("../data/sentiment/trainsentence_and_label_binary.txt")
-        #embedded_dev, dev_labels= DataPrep.load_one_hot_sentiment_data_traind_vocabulary("../data/sentiment/devsentence_and_label_binary.txt",word_to_index,index_to_word,labels_count)
-        #self.test["sentences"], self.test["sentiments"]= DataPrep.load_one_hot_sentiment_data_traind_vocabulary("../../data/sentiment/testsentence_and_label_binary.txt",self.word_to_index, self.index_to_word,self.labels_count)
+        #train_labels = [np.asarray([(np.argmax(tl) + 1.00) / 3.0]) for tl in train_labels]
+        #dev_labels = [np.asarray([(np.argmax(dl) + 1.00) / 3.0]) for dl in dev_labels]
+        # embedded_train, train_labels, word_to_index, index_to_word, labels_count = DataPrep.load_one_hot_sentiment_data("../data/sentiment/trainsentence_and_label_binary.txt")
+        # embedded_dev, dev_labels= DataPrep.load_one_hot_sentiment_data_traind_vocabulary("../data/sentiment/devsentence_and_label_binary.txt",word_to_index,index_to_word,labels_count)
+        # self.test["sentences"], self.test["sentiments"]= DataPrep.load_one_hot_sentiment_data_traind_vocabulary("../../data/sentiment/testsentence_and_label_binary.txt",self.word_to_index, self.index_to_word,self.labels_count)
 
 
         """(X_train, train_labels), (X_test,dev_labels) = imdb.load_data(nb_words=20000,test_split=0.2)
@@ -265,66 +282,65 @@ class FullyConnectedLSTM(object):
             sentence = [one_hot_vocab[term]  for term in sent]
             embedded_dev.append(sentence)"""
 
-        flstm = FullyConnectedLSTM(input_dim=len(embedded_train[0][0]),output_dim=1,number_of_layers=1, hidden_dims=[hidden_dim],dropout_p=0.1,learning_rate=0.01)
+        flstm = FullyConnectedLSTM(input_dim=len(embedded_train[0][0]), output_dim=3, number_of_layers=1,
+                                   hidden_dims=[hidden_dim], dropout_p=0.25, learning_rate=0.01)
         flstm.build_model()
 
-        #train_labels[train_labels == 0] = -1
-        #dev_labels[dev_labels == 0] = -1
-        flstm.train(embedded_train,train_labels,embedded_dev,dev_labels)
+        # train_labels[train_labels == 0] = -1
+        # dev_labels[dev_labels == 0] = -1
+        flstm.train(embedded_train, train_labels, embedded_dev, dev_labels)
         flstm.save_model(modelfile)
 
-    def save_model(self,modelfile):
-        with open(modelfile,"wb") as f:
-            cPickle.dump(self.layers,f,protocol=cPickle.HIGHEST_PROTOCOL)
+    def save_model(self, modelfile):
+        with open(modelfile, "wb") as f:
+            cPickle.dump(self.layers, f, protocol=cPickle.HIGHEST_PROTOCOL)
 
-        with open("params_"+modelfile,"wb") as f:
+        with open("params_" + modelfile, "wb") as f:
             for layer_key in self.layers.keys():
-                cPickle.dump(self.layers[layer_key].params,f,protocol=cPickle.HIGHEST_PROTOCOL)
-
+                cPickle.dump(self.layers[layer_key].params, f, protocol=cPickle.HIGHEST_PROTOCOL)
 
     @staticmethod
     def load_model(modelfile):
         layers = {}
-        with open(modelfile,"rb") as f:
+        with open(modelfile, "rb") as f:
             layers = cPickle.load(f)
-        with open("params_"+modelfile,"rb") as f:
+        with open("params_" + modelfile, "rb") as f:
             for layer_key in layers.keys():
-               layers[layer_key].params = cPickle.load(f)
+                layers[layer_key].params = cPickle.load(f)
 
-        n_of_layers=len(layers.keys())
+        n_of_layers = len(layers.keys())
 
-        flstm = FullyConnectedLSTM(input_dim=layers[0].input_dim,output_dim=layers[n_of_layers-1].output_dim,number_of_layers=n_of_layers, hidden_dims=[layers[0].output_dim])
+        flstm = FullyConnectedLSTM(input_dim=layers[0].input_dim, output_dim=layers[n_of_layers - 1].output_dim,
+                                   number_of_layers=n_of_layers, hidden_dims=[layers[0].output_dim])
         flstm.build_loaded_model(layers)
-        embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="test",representation="glove.840B.300d")
-        test_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in test_labels ]
+        embedded_test, test_labels = WordEmbeddingLayer.load_embedded_data(path="../data/", name="test",
+                                                                           representation="glove.840B.300d")
+        test_labels = [np.asarray([(np.argmax(tl) + 1.00) / 3.0]) for tl in test_labels]
         print("Accuracy on test: ")
-        #flstm.test_dev(embedded_test,test_labels)
+        # flstm.test_dev(embedded_test,test_labels)
         print("Accuracy on train: ")
-        embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/",name="train",representation="glove.840B.300d")
-        train_labels = [np.asarray([(np.argmax(tl) + 1.00 )/ 3.0]) for tl in train_labels ]
-        #flstm.test_dev(embedded_train, train_labels)
+        embedded_train, train_labels = WordEmbeddingLayer.load_embedded_data(path="../data/", name="train",
+                                                                             representation="glove.840B.300d")
+        train_labels = [np.asarray([(np.argmax(tl) + 1.00) / 3.0]) for tl in train_labels]
+        # flstm.test_dev(embedded_train, train_labels)
         return flstm
 
+    @staticmethod
+    def lstm_forward_pass(embeddedSent, flstm):
+        outputs, i_gates, f_gates, o_gates = flstm.forward(embeddedSent)
 
     @staticmethod
-    def lstm_forward_pass(embeddedSent,flstm):
-        outputs,i_gates, f_gates,o_gates =  flstm.forward(embeddedSent)
-
-
-
-
-    @staticmethod
-    def show_sentiment_path(sentence,vocab_representation,flstm):
+    def show_sentiment_path(sentence, vocab_representation, flstm):
         tokens = sentence.split()
         embedded = vocab_representation.embed([tokens])[0]
 
         predictions = []
         labels = []
         gates = []
-        for i in np.arange(0,len(embedded)):
+        for i in np.arange(0, len(embedded)):
             labels.append(tokens[i])
-            predictions.append(flstm.predict(np.asarray(embedded[0:i+1],dtype=np.float32)).tolist())
-            gates = flstm.get_gates(np.asarray(embedded[0:i+1],dtype=np.float32))
+            predictions.append(flstm.predict(np.asarray(embedded[0:i + 1], dtype=np.float32)).tolist())
+            gates = flstm.get_gates(np.asarray(embedded[0:i + 1], dtype=np.float32))
 
         vis_data = predictions
 
@@ -334,24 +350,22 @@ class FullyConnectedLSTM(object):
 
         fig2 = plt.figure()
 
-        for i in np.arange(0,len(gates)):
-            for k in np.arange(0,len(embedded)):
-                ax[1+(i*len(tokens))+k] = fig2.add_subplot(4,len(tokens),(i*len(tokens))+k+1)
-                ax[1+(i*len(tokens))+k].bar(np.arange(len(gates[i][k])),gates[i][k],0.1)
-                ax[1+(i*len(tokens))+k].set_ylim(0,1.0)
-                if(i == 0):
-                    ax[1+(i*len(tokens))+k].set_title(tokens[k])
-
-
+        for i in np.arange(0, len(gates)):
+            for k in np.arange(0, len(embedded)):
+                ax[1 + (i * len(tokens)) + k] = fig2.add_subplot(4, len(tokens), (i * len(tokens)) + k + 1)
+                ax[1 + (i * len(tokens)) + k].bar(np.arange(len(gates[i][k])), gates[i][k], 0.1)
+                ax[1 + (i * len(tokens)) + k].set_ylim(0, 1.0)
+                if (i == 0):
+                    ax[1 + (i * len(tokens)) + k].set_title(tokens[k])
 
         vis_x = [x[0] for x in vis_data]
         vis_y = [x[1] for x in vis_data]
         vis_z = [x[2] for x in vis_data]
 
-        ax[0].plot_wireframe(vis_x, vis_y,vis_z, linestyle='-')
-        ax[0].scatter(vis_x, vis_y,vis_z,marker='o',depthshade=True)
-        for label, x,y,z in zip(labels, vis_x,vis_y,vis_z):
-            ax[0].text(x,y,z,label)
+        ax[0].plot_wireframe(vis_x, vis_y, vis_z, linestyle='-')
+        ax[0].scatter(vis_x, vis_y, vis_z, marker='o', depthshade=True)
+        for label, x, y, z in zip(labels, vis_x, vis_y, vis_z):
+            ax[0].text(x, y, z, label)
 
         ax[0].set_xlim3d(0, 1)
         ax[0].set_ylim3d(0, 1)
@@ -362,78 +376,133 @@ class FullyConnectedLSTM(object):
         ax[0].set_zlabel('Positive')
         plt.show()
 
-
     @staticmethod
-    def show_sentiment_path_1D(sentences,vocab_representation,flstm):
+    def show_sentiment_path_1D(sentences, vocab_representation, flstm):
 
-        fig = plt.figure()
+        fig1 = plt.figure()
+        fig1.suptitle("sentiment")
+        fig2 = plt.figure()
+        fig2.suptitle("output gate")
+        fig3 = plt.figure()
+        fig3.suptitle("forget gate")
+        fig4 = plt.figure()
+        fig4.suptitle("input gate")
+
         ax = {}
-        ax[0] = fig.add_subplot(221)
-        ax["output_gate"] = fig.add_subplot(222)
-        ax["forget_gate"] = fig.add_subplot(223)
-        ax["input_gate"] = fig.add_subplot(224)
-
-        for i in np.arange(0,1):
+        ax[0] = fig1.add_subplot(111)
+        ax["output_gate"] = fig2.add_subplot(111)
+        ax["forget_gate"] = fig3.add_subplot(111)
+        ax["input_gate"] = fig4.add_subplot(111)
+        sentence_embedings = []
+        sentence_sentence = []
+        vis_predictions = []
+        get_visualization_values = theano.function([flstm.layers[0].input],
+                                                   [flstm.layers[0].output[-1], flstm.layers[0].hidden_state[-1]])
+        for i in np.arange(0, 2):  # len(sentences)):
             sentence = sentences[i]
             tokens = sentence.split()
             embedded = vocab_representation.embed([tokens])[0]
-
 
             predictions = []
             labels = []
             input_gates = []
             output_gates = []
             forget_gates = []
-            for i in np.arange(0,len(embedded)):
+
+            for i in np.arange(0, len(embedded)):
                 labels.append(tokens[i])
-                predictions.append(flstm.predict(np.asarray(embedded[0:i+1],dtype=np.float32)).tolist())
-                gates = flstm.get_gates(np.asarray(embedded[0:i+1],dtype=np.float32))
-                input_gates.append(gates[1])
-                forget_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(),gates[2][-1].transpose()))
-                output_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(),gates[3][-1].transpose()))
+
+                predictions.append(flstm.predict(np.asarray(embedded[0:i + 1], dtype=np.float32)).tolist())
+                gates = flstm.get_gates(np.asarray(embedded[0:i + 1], dtype=np.float32))
+                input_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(), gates[1][-1].transpose()))
+                forget_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(), gates[2][-1].transpose()))
+                output_gates.append(np.dot(flstm.layers[0].output_params[0].get_value(), gates[3][-1].transpose()))
 
             vis_data = predictions
 
+            pred, embding = get_visualization_values(np.asarray(embedded[0:len(embedded)], dtype=np.float32))
 
-
-
-
+            sentence_embedings.append(embding)
+            sentence_sentence.append(' '.join(map(str, labels)))
+            vis_predictions.append((np.floor(pred[-1] * 3.0) + 1.00) / 3.00)
 
             vis_x = [i for i in np.arange(len(vis_data))]
             vis_y = [p[0] for p in vis_data]
 
             ax[0].plot(vis_x, vis_y, linestyle='-')
-            ax[0].scatter(vis_x, vis_y,marker='o')
-            for label, x,y in zip(labels, vis_x,vis_y):
-                ax[0].text(x,y,label)
-
+            ax[0].scatter(vis_x, vis_y, marker='o')
+            for label, x, y in zip(labels, vis_x, vis_y):
+                ax[0].text(x, y, label)
 
             vis_data2 = output_gates
 
-
-
             vis_x2 = [i for i in np.arange(len(vis_data2))]
             vis_y2 = [p[0] for p in vis_data2]
-
             ax["output_gate"].plot(vis_x2, vis_y2, linestyle='-')
-            ax["output_gate"].scatter(vis_x2, vis_y2,marker='o')
-            for label, x,y in zip(labels, vis_x2,vis_y2):
-                ax["output_gate"].text(x,y,label)
+            ax["output_gate"].scatter(vis_x2, vis_y2, marker='o')
+            for label, x, y in zip(labels, vis_x2, vis_y2):
+                ax["output_gate"].text(x, y, label)
 
             vis_data2 = forget_gates
 
             vis_x2 = [i for i in np.arange(len(vis_data2))]
             vis_y2 = [p[0] for p in vis_data2]
-
             ax["forget_gate"].plot(vis_x2, vis_y2, linestyle='-')
             ax["forget_gate"].scatter(vis_x2, vis_y2, marker='o')
             for label, x, y in zip(labels, vis_x2, vis_y2):
                 ax["forget_gate"].text(x, y, label)
 
+            vis_data2 = input_gates
+
+            vis_x2 = [i for i in np.arange(len(vis_data2))]
+            vis_y2 = [p[0] for p in vis_data2]
+            ax["input_gate"].plot(vis_x2, vis_y2, linestyle='-')
+            ax["input_gate"].scatter(vis_x2, vis_y2, marker='o')
+            for label, x, y in zip(labels, vis_x2, vis_y2):
+                ax["input_gate"].text(x, y, label)
+
         plt.show()
 
+        x = np.asarray(sentence_embedings)
+        n_samples, n_features = x.shape
 
+        print("Computing t-SNE embedding")
+        tsne = manifold.TSNE(n_components=2, init='pca', random_state=0)
+        X_tsne = tsne.fit_transform(x)
 
+        FullyConnectedLSTM.plot_embedding(X_tsne, np.asarray(vis_predictions), sentence_sentence,
+                                          "t-SNE embedding of the embedded digits")
+
+        plt.show()
+
+    @staticmethod
+    def plot_embedding(features, classes, labels, title=None):
+        x_min, x_max = np.min(features, 0), np.max(features, 0)
+        features = (features - x_min) / (x_max - x_min)
+
+        plt.figure()
+        ax = plt.subplot(111)
+        for i in range(features.shape[0]):
+            plt.text(features[i, 0], features[i, 1], str(labels[i]),
+                     color=plt.cm.Set1(float(classes[i]) / 10),
+                     fontdict={'weight': 'bold', 'size': 9})
+
+        if hasattr(offsetbox, 'AnnotationBbox'):
+            # only print thumbnails with matplotlib > 1.0
+            shown_images = np.array([[1., 1.]])  # just something big
+            for i in range(features.shape[0]):
+                dist = np.sum((features[i] - shown_images) ** 2, 1)
+                if np.min(dist) < 4e-3:
+                    # don't show points that are too close
+                    continue
+                shown_images = np.r_[shown_images, [features[i]]]
+                """imagebox = offsetbox.AnnotationBbox(
+                    offsetbox.OffsetImage(digits.images[i], cmap=plt.cm.gray_r),
+                    X[i])
+                ax.add_artist(imagebox)"""
+        plt.xticks([]), plt.yticks([])
+        if title is not None:
+            plt.title(title)
 
     @staticmethod
     def analyse():
@@ -443,148 +512,221 @@ class FullyConnectedLSTM(object):
         vocab_representation.load_filtered_embedding("../data/filtered_glove.840B.300d")
 
         FullyConnectedLSTM.show_sentiment_path_1D(
-            ["he is a bad actor , but his play is good !"
-             ,"the movie made by a good man is bad ."
-             ,"the movie made by a good man is bad ."
-        ,"the actor is bad, but he played good !"
-        , "he played good !"
-        , "they made a bad movie from a good story !"
-        , "although he is a bad actor, he played good !"
-        ],vocab_representation,flstm)
-        embed_sent = vocab_representation.embed(sentences=[["bad","!"]])[0]
-        print("bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+            ["I thought it should be bad , but it was good !", "I thought it should be good , but it was bad !"
+                , "they made a bad movie from a good story .", "they made a good movie from a bad story ."
+                , "although he is a good actor, his play is bad !"
+                , "although he is a bad actor, his play is good !"
+                , "the movie made by a good man is bad ."
+                , "the movie made by a bad man is good ."
+                , "the actor is good ."
+                , "the scenario is good ."
+                , "terrible !"
+                , "great !"
+                , "you are good."
+                , "the movie is bad !"
+                , "the actor is bad !"
+                , "the scenario is bad !"
+                , "he is a bad actor , but his play is good !"
+                , "the bad man made  a good movie ."
+                , "the ugly actor played well !"
+                , "the movie made by a good man is bad ."
+                , "the movie made by a bad man is good ."
+                , "the actor is bad, but he played good !"
+                , "he played good !"
+                , "he played bad !"
+                , "they made a bad movie from a good story !"
+                , "although he is a bad actor, he played good !"
+                , "the bad movie is made by me ."
+                , "the bad movie is made by me ."
+                , "the bad movie is made by a good man ."
+                , "the movie is made  by a good man ."
+                , "the movie made  by a good man is bad ."
+                , "the movie made  by a bad man is good ."
+                , "the bad man made  a good movie ."
+                , "the good man made  a bad movie ."
+                , "the good man is bad !"
+                , "the actor is bad !"
+                , "the actor played bad !"
+                , "the good actor played so bad !"
+                , "I thought it should be bad but it was good !"
+                , "I thought it should be bad, but it was good !"
+                , "the actor is normally bad, but he played good !"
+                , "the actor is bad, but he played good !"
+                , "the actor is normally bad !"
+                , "the actor is bad !"
+                , "he played good !"
+                , "his play is good !"
+                , "he is a bad actor, he played good !"
+                , "he is a bad actor, but he played good !"
+                , "he is a bad actor, but his play is good !"
+                , "he is a bad actor, but his play is good ! "
+                , "although he is a bad actor, he played good !"
+                , "although he is a bad actor, his play is good !"
+                , "although he is a bad actor, his act is good !"
+                , "although he is a bad actor, his play is good !"
+                , "they made a bad movie from a good story !"
+             ], vocab_representation, flstm)
+        embed_sent = vocab_representation.embed(sentences=[["bad", "!"]])[0]
+        print("bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["not","bad","!"]])[0]
-        print("not bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["not", "bad", "!"]])[0]
+        print("not bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["very","bad","!"]])[0]
-        print("very bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["very", "bad", "!"]])[0]
+        print("very bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["it","is","not","good","!"]])[0]
-        print("it is not good! is: "+str(np.argmax(flstm.predict(np.asarray(embed_sent,dtype=np.float32)))))
+        embed_sent = vocab_representation.embed(sentences=[["it", "is", "not", "good", "!"]])[0]
+        print("it is not good! is: " + str(np.argmax(flstm.predict(np.asarray(embed_sent, dtype=np.float32)))))
 
-        embed_sent = vocab_representation.embed(sentences=[["it","is","not","good","not","bad","!"]])[0]
-        print("it is not good not bad! is: "+str(np.argmax(flstm.predict(np.asarray(embed_sent,dtype=np.float32)))))
+        embed_sent = vocab_representation.embed(sentences=[["it", "is", "not", "good", "not", "bad", "!"]])[0]
+        print("it is not good not bad! is: " + str(np.argmax(flstm.predict(np.asarray(embed_sent, dtype=np.float32)))))
 
-        embed_sent = vocab_representation.embed(sentences=[["good","or","bad","!"]])[0]
-        print("good or bad! is: "+str(np.argmax(flstm.predict(np.asarray(embed_sent,dtype=np.float32)))))
+        embed_sent = vocab_representation.embed(sentences=[["good", "or", "bad", "!"]])[0]
+        print("good or bad! is: " + str(np.argmax(flstm.predict(np.asarray(embed_sent, dtype=np.float32)))))
 
-        embed_sent = vocab_representation.embed(sentences=[["good","or","bad","!"]])[0]
-        print("bad or good! is: "+str(np.argmax(flstm.predict(np.asarray(embed_sent,dtype=np.float32)))))
-
+        embed_sent = vocab_representation.embed(sentences=[["good", "or", "bad", "!"]])[0]
+        print("bad or good! is: " + str(np.argmax(flstm.predict(np.asarray(embed_sent, dtype=np.float32)))))
 
         embed_sent = vocab_representation.embed(sentences=[["the"]])[0]
-        print("the is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("the is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
         embed_sent = vocab_representation.embed(sentences=[["bad"]])[0]
-        print("bad is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("bad is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
         embed_sent = vocab_representation.embed(sentences=[["movie"]])[0]
-        print("movie is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("movie is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
         embed_sent = vocab_representation.embed(sentences=[["is"]])[0]
-        print("is is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("is is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
         embed_sent = vocab_representation.embed(sentences=[["made"]])[0]
-        print("made is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("made is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
         embed_sent = vocab_representation.embed(sentences=[["by"]])[0]
-        print("by is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("by is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
         embed_sent = vocab_representation.embed(sentences=[["me"]])[0]
-        print("me is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        print("me is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","bad","movie","is","made","by","me","."]])[0]
-        print("the bad movie is made by me. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "bad", "movie", "is", "made", "by", "me", "."]])[0]
+        print("the bad movie is made by me. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","bad","movie","is","made","by","a","good","man","."]])[0]
-        print("the bad movie is made by a good man. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = \
+        vocab_representation.embed(sentences=[["the", "bad", "movie", "is", "made", "by", "a", "good", "man", "."]])[0]
+        print(
+            "the bad movie is made by a good man. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","movie","is","made","by","a","good","man","."]])[0]
-        print("the movie is made  by a good man. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = \
+        vocab_representation.embed(sentences=[["the", "movie", "is", "made", "by", "a", "good", "man", "."]])[0]
+        print("the movie is made  by a good man. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","movie","made","by","a","good","man","is","bad","."]])[0]
-        print("the movie made  by a good man is bad. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = \
+        vocab_representation.embed(sentences=[["the", "movie", "made", "by", "a", "good", "man", "is", "bad", "."]])[0]
+        print(
+            "the movie made  by a good man is bad. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","movie","made","by","a","bad","man","is","good","."]])[0]
-        print("the movie made  by a bad man is good. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = \
+        vocab_representation.embed(sentences=[["the", "movie", "made", "by", "a", "bad", "man", "is", "good", "."]])[0]
+        print(
+            "the movie made  by a bad man is good. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","bad","man","made","a","good","movie","."]])[0]
-        print("the bad man made  a good movie. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "bad", "man", "made", "a", "good", "movie", "."]])[0]
+        print("the bad man made  a good movie. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","good","man","made","a","bad","movie","."]])[0]
-        print("the good man made  a bad movie. is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "good", "man", "made", "a", "bad", "movie", "."]])[0]
+        print("the good man made  a bad movie. is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","good","man","is","bad","!"]])[0]
-        print("the good man is bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "good", "man", "is", "bad", "!"]])[0]
+        print("the good man is bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","actor","is","bad","!"]])[0]
-        print("the actor is bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "actor", "is", "bad", "!"]])[0]
+        print("the actor is bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","actor","played","bad","!"]])[0]
-        print("the actor played bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "actor", "played", "bad", "!"]])[0]
+        print("the actor played bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","good","actor","played","bad","!"]])[0]
-        print("the good actor played so bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "good", "actor", "played", "bad", "!"]])[0]
+        print("the good actor played so bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["I","thought","it","should","be","bad","but","it","was","good","!"]])[0]
-        print("I thought it should be bad but it was good ! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["I", "thought", "it", "should", "be", "bad", "but", "it", "was", "good", "!"]])[0]
+        print("I thought it should be bad but it was good ! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["I","thought","it","should","be","bad",",","but","it","was","good","!"]])[0]
-        print("I thought it should be bad, but it was good ! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["I", "thought", "it", "should", "be", "bad", ",", "but", "it", "was", "good", "!"]])[0]
+        print("I thought it should be bad, but it was good ! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","actor","is","normally","bad",",","but","he","played","good","!"]])[0]
-        print("the actor is normally bad, but he played good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["the", "actor", "is", "normally", "bad", ",", "but", "he", "played", "good", "!"]])[0]
+        print("the actor is normally bad, but he played good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","actor","is","bad",",","but","he","played","good","!"]])[0]
-        print("the actor is bad, but he played good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = \
+        vocab_representation.embed(sentences=[["the", "actor", "is", "bad", ",", "but", "he", "played", "good", "!"]])[
+            0]
+        print(
+            "the actor is bad, but he played good! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","actor","is","normally","bad","!"]])[0]
-        print("the actor is normally bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "actor", "is", "normally", "bad", "!"]])[0]
+        print("the actor is normally bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["the","actor","is","bad","!"]])[0]
-        print("the actor is bad! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["the", "actor", "is", "bad", "!"]])[0]
+        print("the actor is bad! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["he","played","good","!"]])[0]
-        print("he played good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["he", "played", "good", "!"]])[0]
+        print("he played good! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["his","play","is","good","!"]])[0]
-        print("his play is good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(sentences=[["his", "play", "is", "good", "!"]])[0]
+        print("his play is good! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["he","is","a","bad","actor","he","played","good","!"]])[0]
-        print("he is a bad actor, he played good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = \
+        vocab_representation.embed(sentences=[["he", "is", "a", "bad", "actor", "he", "played", "good", "!"]])[0]
+        print("he is a bad actor, he played good! is: " + str(flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["he","is","a","bad","actor",",","but","he","played","good","!"]])[0]
-        print("he is a bad actor, but he played good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["he", "is", "a", "bad", "actor", ",", "but", "he", "played", "good", "!"]])[0]
+        print("he is a bad actor, but he played good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["he","is","a","bad","actor",",","but","his","play","is","good","!"]])[0]
-        print("he is a bad actor, but his play is good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["he", "is", "a", "bad", "actor", ",", "but", "his", "play", "is", "good", "!"]])[0]
+        print("he is a bad actor, but his play is good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["he","is","a","bad","actor",",","but","his","play","is","good","!"]])[0]
-        print("he is a bad actor, but his play is good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["he", "is", "a", "bad", "actor", ",", "but", "his", "play", "is", "good", "!"]])[0]
+        print("he is a bad actor, but his play is good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
+        embed_sent = vocab_representation.embed(
+            sentences=[["although", "he", "is", "a", "bad", "actor", ",", "he", "played", "good", "!"]])[0]
+        print("although he is a bad actor, he played good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["although", "he","is","a","bad","actor",",","he","played","good","!"]])[0]
-        print("although he is a bad actor, he played good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["although", "he", "is", "a", "bad", "actor", ",", "his", "play", "is", "good", "!"]])[0]
+        print("although he is a bad actor, his play is good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["although", "he","is","a","bad","actor",",","his","play","is","good","!"]])[0]
-        print("although he is a bad actor, his play is good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
+        embed_sent = vocab_representation.embed(
+            sentences=[["although", "he", "is", "a", "bad", "actor", ",", "his", "act", "is", "good", "!"]])[0]
+        print("although he is a bad actor, his act is good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
+        embed_sent = vocab_representation.embed(
+            sentences=[["although", "he", "is", "a", "bad", "actor", ",", "his", "play", "is", "good", "!"]])[0]
+        print("although he is a bad actor, his play is good! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
-        embed_sent = vocab_representation.embed(sentences=[["although", "he","is","a","bad","actor",",","his","act","is","good","!"]])[0]
-        print("although he is a bad actor, his act is good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
-
-        embed_sent = vocab_representation.embed(sentences=[["although", "he","is","a","bad","actor",",","his","play","is","good","!"]])[0]
-        print("although he is a bad actor, his play is good! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
-
-        embed_sent = vocab_representation.embed(sentences=[["they", "made","a","bad","movie","from","a","good","story","!"]])[0]
-        print("they made a bad movie from a good story! is: "+str(flstm.predict(np.asarray(embed_sent,dtype=np.float32))))
-
-
+        embed_sent = vocab_representation.embed(
+            sentences=[["they", "made", "a", "bad", "movie", "from", "a", "good", "story", "!"]])[0]
+        print("they made a bad movie from a good story! is: " + str(
+            flstm.predict(np.asarray(embed_sent, dtype=np.float32))))
 
 
 if __name__ == '__main__':
-    FullyConnectedLSTM.train_1layer_glove_wordembedding(10,"test_model_diffdim_50.txt")
-    #FullyConnectedLSTM.load_model("test_model_diffdim.txt") #("test_model.txt")
-    #FullyConnectedLSTM.analyse()
-
+    FullyConnectedLSTM.train_1layer_glove_wordembedding(100, "test_model_diffdim_errorall_50.txt")
+    FullyConnectedLSTM.load_model("test_model_diffdim.txt")  # ("test_model.txt")
+    # FullyConnectedLSTM.analyse()
