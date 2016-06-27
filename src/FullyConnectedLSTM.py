@@ -134,7 +134,7 @@ class FullyConnectedLSTM(object):
 
         # p = theano.shared(value=0, name="count", borrow="True")
 
-        cost = T.sum(T.sum(T.nnet.binary_crossentropy((self.layers[0].output+0.0000001),y) , axis=1) / dists) #T.erf(error1) # T.erf(error1) + + L1 + L2
+        cost = T.sum((T.sum(T.nnet.binary_crossentropy((self.layers[0].output+0.0000001),y) , axis=1) / dists) * ) #T.erf(error1) # T.erf(error1) + + L1 + L2
 
         # def calculate_fading_cost(output, target, d):
 
@@ -152,7 +152,7 @@ class FullyConnectedLSTM(object):
         # self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
         # self.total_grad = [theano.shared(value=np.zeros(shape=grad.shape,dtype=theano.config.floatX)) for grad in grads]
         # self.count = theano.shared(value=0, name="count", borrow="True")
-        self.learning_rate = 0.02
+        self.learning_rate = 0.001
         updates = []  # [(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX))]
         # updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
         # updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
@@ -163,8 +163,10 @@ class FullyConnectedLSTM(object):
         # G = [ T.tensor(dtype=theano.config.floatX,broadcastable=param.broadcastable) for i in range(self.batch_size) for param in params]
         # updates = [G[i] for i in range(len(params))]
 
-        updates += [(param_i, param_i - self.learning_rate * grad_i) for param_i, grad_i in zip(params, grads)]
-
+        #updates += [(param_i, param_i - self.learning_rate * grad_i) for param_i, grad_i in zip(params, grads)]
+        updates = LearningAlgorithms.adam(
+            cost,params, lr=0.01
+        )
         """for i in range(len(params)):
             for j in range(1, int(len(G)/len(params))):
                 updates[i] += G[i*self.batch_size + j]
@@ -188,6 +190,7 @@ class FullyConnectedLSTM(object):
             grads = []
             # For each training example...
             iteration = 0
+            dropout = np.random.binomial(1, 1.0 - self.dropout_p, self.input_dim).astype(dtype=np.float32)
             for i in np.random.permutation(len(X_train)):
                 # print("iteration "+str(iteration))
                 iteration += 1
@@ -196,8 +199,7 @@ class FullyConnectedLSTM(object):
                 y_train[i]
                 next_X = X_train[i][1:]
                 next_X.append(np.zeros_like(X_train[i][0]))
-                cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [
-                    np.random.binomial(1, 1.0 - self.dropout_p, self.input_dim).astype(dtype=np.float32) for i in
+                cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [dropout for i in
                     np.arange(len(X_train[i]))]
                                      # ,[np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                      , np.asarray([y_train[i] for k in np.arange(len(X_train[i]))], dtype=np.int32)
@@ -283,7 +285,7 @@ class FullyConnectedLSTM(object):
             embedded_dev.append(sentence)"""
 
         flstm = FullyConnectedLSTM(input_dim=len(embedded_train[0][0]), output_dim=3, number_of_layers=1,
-                                   hidden_dims=[hidden_dim], dropout_p=0.25, learning_rate=0.01)
+                                   hidden_dims=[hidden_dim], dropout_p=0.9, learning_rate=0.01)
         flstm.build_model()
 
         # train_labels[train_labels == 0] = -1
