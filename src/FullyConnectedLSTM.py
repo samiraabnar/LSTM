@@ -134,7 +134,7 @@ class FullyConnectedLSTM(object):
 
         # p = theano.shared(value=0, name="count", borrow="True")
 
-        cost = T.sum((T.sum(T.nnet.binary_crossentropy((self.layers[0].output+0.0000001),y) , axis=1) / dists) * ) #T.erf(error1) # T.erf(error1) + + L1 + L2
+        cost = T.sum((T.sum(T.nnet.binary_crossentropy((self.layers[0].output+0.0000001),y), axis=1) / dists)) #T.erf(error1) # T.erf(error1) + + L1 + L2
 
         # def calculate_fading_cost(output, target, d):
 
@@ -285,7 +285,7 @@ class FullyConnectedLSTM(object):
             embedded_dev.append(sentence)"""
 
         flstm = FullyConnectedLSTM(input_dim=len(embedded_train[0][0]), output_dim=3, number_of_layers=1,
-                                   hidden_dims=[hidden_dim], dropout_p=0.9, learning_rate=0.01)
+                                   hidden_dims=[hidden_dim], dropout_p=0.5, learning_rate=0.01)
         flstm.build_model()
 
         # train_labels[train_labels == 0] = -1
@@ -729,6 +729,6 @@ class FullyConnectedLSTM(object):
 
 
 if __name__ == '__main__':
-    FullyConnectedLSTM.train_1layer_glove_wordembedding(100, "test_model_diffdim_errorall_50.txt")
-    FullyConnectedLSTM.load_model("test_model_diffdim.txt")  # ("test_model.txt")
+    FullyConnectedLSTM.train_1layer_glove_wordembedding(100, "test_model.txt")
+    #FullyConnectedLSTM.load_model("test_model_diffdim.txt")  # ("test_model.txt")
     # FullyConnectedLSTM.analyse()

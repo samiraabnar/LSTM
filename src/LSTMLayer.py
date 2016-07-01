@@ -43,65 +43,67 @@ class LSTMLayer(object):
 
             c = forget_gate * prev_content + input_gate * stabilized_input
             s = output_gate * T.tanh(c)
-            o = T.nnet.sigmoid(T.dot(self.O_w,s)+self.O_bias)
+            o = T.nnet.softmax(T.dot(self.O_w,s)+self.O_bias)[0]
 
-            return [o,s,c]
+            return [o,s,c,input_gate, forget_gate, output_gate]
 
-        [self.output,self.hidden_state,self.memory_content] , updates = theano.scan(
+        [self.output,self.hidden_state,self.memory_content,self.input_gate, self.forget_gate,
+         self.output_gate] , updates = theano.scan(
             forward_step,
             sequences=[self.input],
             truncate_gradient=self.bptt_truncate,
             outputs_info=[None,dict(initial=T.zeros(self.output_dim,dtype=theano.config.floatX)),
                           dict(initial=T.zeros(self.output_dim,dtype=theano.config.floatX))
+                          , None, None, None
                           ])
 
     def initialize_params(self):
         U_input = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
         U_forget = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
         U_output = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
 
         W_input = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
         W_forget = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
         W_output = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
 
 
         U = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.input_dim + self.output_dim)),
                                       (self.output_dim,self.input_dim))
             , dtype=theano.config.floatX)
 
         W = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       (self.output_dim,self.output_dim))
             , dtype=theano.config.floatX)
@@ -129,7 +131,7 @@ class LSTMLayer(object):
 
 
         O_w = np.asarray(
-            self.random_state.uniform(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
+            self.random_state.normal(-np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       np.sqrt(6.0 / (self.output_dim + self.output_dim)),
                                       (self.outer_output_dim,self.output_dim))
             , dtype=theano.config.floatX)

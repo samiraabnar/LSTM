@@ -115,12 +115,12 @@ class FullyConnectedLSTM(object):
 
         #cost = -T.log(self.layers[0].output[-1][T.argmax(y)] + off) + L1 + L2
 
-        cost = T.sum(T.nnet.categorical_crossentropy(self.layers[0].output[-1],y)) + L1 + L2
+        cost = T.sum(T.nnet.categorical_crossentropy(self.layers[0].output[-1]+off,y)) + L1 + L2
 
         grads = T.grad(theano.gradient.grad_clip(cost,-1,1), params)
-        self.learning_rate = 0.005
+        self.learning_rate = 0.001
         #updates = [(param_i, param_i - self.learning_rate * grad_i) for param_i,grad_i in zip(params,grads)]
-        updates =  LearningAlgorithms.adam(cost,params,lr=0.0001)
+        updates =  LearningAlgorithms.adam(cost,params,lr=self.learning_rate)
 
         self.sgd_step = theano.function([x,y],cost, updates=updates)
         self.predict = theano.function([x],self.layers[0].output[-1])
@@ -137,7 +137,7 @@ class FullyConnectedLSTM(object):
                 cost = self.sgd_step(np.asarray(X_train[i], dtype=np.float32) * [np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                #,[np.random.binomial(1, 1.0 - self.dropout_p,self.input_dim).astype(dtype=np.float32) for i in np.arange(len(X_train[i]))]
                                ,y_train[i].astype(np.int32))
-                print(cost)
+                #print(cost)
                 #exit(0)
 
             print("Accuracy on dev: ")

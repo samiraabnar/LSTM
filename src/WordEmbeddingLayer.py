@@ -37,6 +37,8 @@ class WordEmbeddingLayer(object):
         self.word2vec['UNK'] = np.zeros(self.word2vec["."].shape)
         self.vec2word[self.word2vec['UNK'].tostring()] = "UNK"
 
+
+
     def save_embedding(self,filename):
         with open(filename+"_word2vec.pkl","wb") as f:
             pickle.dump(self.word2vec,f)
