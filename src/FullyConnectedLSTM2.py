@@ -13,7 +13,7 @@ import sys
 
 sys.path.append('../../')
 
-from LSTM.src.LSTMLayer import *
+from LSTM.src.LSTM2Layer import *
 from LSTM.src.FullyConnectedLayer import *
 from LSTM.src.OutputLayer import *
 from LSTM.src.WordEmbeddingLayer import *
@@ -26,7 +26,7 @@ from six.moves import cPickle
 from keras.datasets import imdb
 
 
-class FullyConnectedLSTM(object):
+class FullyConnectedLSTM2(object):
     def __init__(self, input_dim, output_dim, number_of_layers=1, hidden_dims=[100], dropout_p=0.0, learning_rate=0.1):
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -101,7 +101,7 @@ class FullyConnectedLSTM(object):
 
         params += [self.E]"""
 
-        self.layers[0] = LSTMLayer(input=x,
+        self.layers[0] = LSTM2Layer(input=x,
                                    input_dim=self.input_dim,
                                    output_dim=self.hidden_dims[0],
                                    outer_output_dim=self.output_dim,
@@ -152,7 +152,7 @@ class FullyConnectedLSTM(object):
         # self.total_cost = theano.shared(value=np.zeros(1,dtype=theano.config.floatX) ,name="total_cost", borrow="True")
         # self.total_grad = [theano.shared(value=np.zeros(shape=grad.shape,dtype=theano.config.floatX)) for grad in grads]
         # self.count = theano.shared(value=0, name="count", borrow="True")
-        self.learning_rate = 0.001
+        self.learning_rate = 0.0001
         updates = []  # [(self.total_cost, T.switch(T.ge(self.count,20),cost,self.total_cost+cost).astype(theano.config.floatX))]
         # updates += [(self.total_grad[i], T.switch(T.ge(self.count,20),grads[i],self.total_grad[i]+grads[i])) for i in range(len(grads))]
         # updates += [(self.count,T.switch(T.ge(self.count,20),0,self.count + 1))]
@@ -165,7 +165,7 @@ class FullyConnectedLSTM(object):
 
         #updates += [(param_i, param_i - self.learning_rate * grad_i) for param_i, grad_i in zip(params, grads)]
         updates = LearningAlgorithms.adam(
-            cost,params, lr=0.01
+            cost,params, lr=0.0001
         )
         """for i in range(len(params)):
             for j in range(1, int(len(G)/len(params))):
@@ -311,7 +311,7 @@ class FullyConnectedLSTM(object):
             sentence = [one_hot_vocab[term]  for term in sent]
             embedded_dev.append(sentence)"""
 
-        flstm = FullyConnectedLSTM(input_dim=len(binary_embedded_train[0][0]), output_dim=2, number_of_layers=1,
+        flstm = FullyConnectedLSTM2(input_dim=len(binary_embedded_train[0][0]), output_dim=2, number_of_layers=1,
                                    hidden_dims=[hidden_dim], dropout_p=0.5, learning_rate=0.01)
         flstm.build_model()
 
@@ -756,6 +756,6 @@ class FullyConnectedLSTM(object):
 
 
 if __name__ == '__main__':
-    FullyConnectedLSTM.train_1layer_glove_wordembedding(100, "1Layaer_100_model.txt")
+    FullyConnectedLSTM2.train_1layer_glove_wordembedding(100, "2Layer_100_model.txt")
     #FullyConnectedLSTM.load_model("test_model_diffdim.txt")  # ("test_model.txt")
     # FullyConnectedLSTM.analyse()
