@@ -134,7 +134,7 @@ class FullyConnectedLSTM2(object):
 
         # p = theano.shared(value=0, name="count", borrow="True")
 
-        cost = T.sum((T.sum(T.nnet.categorical_crossentropy((self.layers[0].output+0.000000001),y)))) #T.erf(error1) # T.erf(error1) + + L1 + L2
+        cost = T.sum((T.sum(T.nnet.categorical_crossentropy((self.layers[0].output+0.00001),y)))) #T.erf(error1) # T.erf(error1) + + L1 + L2
 
         # def calculate_fading_cost(output, target, d):
 
